@@ -1,0 +1,2 @@
+2025-07-27 22:57:00 - PERF - local_rag.performance - Function: GET /api/v1/monitoring/system | status_code: 200 | request_id: 71998c0a | client_ip: testclient | request_size: None | response_size: 442 - Duration: 0.106s
+2025-07-27 22:57:00 - PERF - local_rag.performance - Function: GET /api/v1/monitoring/health/detailed | status_code: 200 | request_id: 237a72b1 | client_ip: testclient | request_size: None | response_size: 1190 - Duration: 0.108s

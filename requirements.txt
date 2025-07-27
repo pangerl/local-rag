@@ -1,0 +1,35 @@
+# Web 框架
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+
+# 数据验证
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# 机器学习和向量处理 - 使用更稳定的版本
+sentence-transformers>=2.2.0
+torch>=2.0.0
+transformers>=4.30.0
+
+# 向量数据库
+chromadb>=0.4.0
+
+# 中文文本处理
+jieba>=0.42.0
+
+# 文档处理
+markdown>=3.4.0
+
+# 工具库
+numpy>=1.24.0
+python-multipart>=0.0.6
+psutil>=5.9.0
+
+# 开发和测试
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+httpx>=0.25.0
+
+# 类型检查
+mypy>=1.7.0
