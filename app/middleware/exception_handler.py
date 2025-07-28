@@ -110,9 +110,9 @@ class ExceptionHandlerMiddleware:
         self,
         exception: Exception,
         request: Request,
-        status_code: int = None,
-        error_type: str = None,
-        message: str = None
+        status_code: Optional[int] = None,
+        error_type: Optional[str] = None,
+        message: Optional[str] = None
     ) -> ErrorResponse:
         """创建标准化的错误响应"""
         
@@ -130,12 +130,19 @@ class ExceptionHandlerMiddleware:
         
         # 确定错误消息
         if message is None:
-            if hasattr(exception, 'message'):
-                message = exception.message
-            elif hasattr(exception, 'detail'):
+            # 优先使用 HTTPException 的 detail 属性
+            if isinstance(exception, HTTPException) and hasattr(exception, 'detail'):
                 message = exception.detail
+            # 其次使用自定义异常的 message 属性
+            elif isinstance(exception, LocalRAGException) and hasattr(exception, 'message'):
+                message = exception.message
+            # 否则使用映射中的默认消息或将异常转为字符串
             else:
                 message = mapping.get("default_message", str(exception))
+
+        # 确保 message 和 error_type 不为 None
+        final_message = message if message is not None else "内部服务器错误"
+        final_error_type = error_type if error_type is not None else "InternalServerError"
         
         # 构建详细信息
         details = {
@@ -165,8 +172,8 @@ class ExceptionHandlerMiddleware:
             details["status_code"] = exception.status_code
         
         return ErrorResponse(
-            error=error_type,
-            message=message,
+            error=final_error_type,
+            message=final_message,
             details=details
         )
     
@@ -175,7 +182,7 @@ class ExceptionHandlerMiddleware:
         exception: Exception,
         request: Request,
         status_code: int,
-        response_time: float = None
+        response_time: Optional[float] = None
     ):
         """记录异常日志"""
         client_info = self._get_client_info(request)
@@ -206,11 +213,12 @@ class ExceptionHandlerMiddleware:
     async def handle_validation_error(
         self,
         request: Request,
-        exc: ValidationError
+        exc: Exception
     ) -> JSONResponse:
         """处理 Pydantic 验证错误"""
+        assert isinstance(exc, ValidationError)
         error_response = self._create_error_response(exc, request)
-        self._log_exception(exc, request, error_response.details.get("status_code", 422))
+        self._log_exception(exc, request, 422)
         
         return JSONResponse(
             status_code=422,
@@ -220,9 +228,10 @@ class ExceptionHandlerMiddleware:
     async def handle_local_rag_exception(
         self,
         request: Request,
-        exc: LocalRAGException
+        exc: Exception
     ) -> JSONResponse:
         """处理 Local RAG 自定义异常"""
+        assert isinstance(exc, LocalRAGException)
         error_response = self._create_error_response(exc, request)
         mapping = self.error_mappings.get(type(exc), {})
         status_code = mapping.get("status_code", 500)
@@ -237,9 +246,10 @@ class ExceptionHandlerMiddleware:
     async def handle_http_exception(
         self,
         request: Request,
-        exc: HTTPException
+        exc: Exception
     ) -> JSONResponse:
         """处理 HTTP 异常"""
+        assert isinstance(exc, HTTPException)
         error_response = self._create_error_response(
             exc, request, exc.status_code, f"HTTP{exc.status_code}", exc.detail
         )

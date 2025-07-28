@@ -7,7 +7,7 @@ import logging
 import time
 from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, CrossEncoder
 
 from app.core.config import Settings
 from app.services.database import ChromaDBService
@@ -42,7 +42,7 @@ class VectorRetriever:
         
         # 模型缓存
         self.embedding_model: Optional[SentenceTransformer] = None
-        self.reranker_model: Optional[SentenceTransformer] = None
+        self.reranker_model: Optional[CrossEncoder] = None
         
         # 检索统计
         self.retrieval_stats = {
@@ -77,12 +77,12 @@ class VectorRetriever:
         
         return self.embedding_model
     
-    def _ensure_reranker_model(self) -> SentenceTransformer:
+    def _ensure_reranker_model(self) -> CrossEncoder:
         """
         确保重排序模型已加载
         
         Returns:
-            SentenceTransformer: 重排序模型实例
+            CrossEncoder: 重排序模型实例
             
         Raises:
             ModelLoadError: 当模型加载失败时抛出异常
@@ -173,7 +173,8 @@ class VectorRetriever:
                     "id": results["ids"][0][i],
                     "text": results["documents"][0][i],
                     "metadata": results["metadatas"][0][i],
-                    "similarity_score": 1.0 - results["distances"][0][i],  # 转换为相似度分数
+                    # 转换为相似度分数，并确保不为负
+                    "similarity_score": max(0.0, 1.0 - results["distances"][0][i]),
                     "distance": results["distances"][0][i]
                 }
                 chunks.append(chunk)
@@ -217,15 +218,23 @@ class VectorRetriever:
                 query_doc_pairs.append([query, chunk["text"]])
             
             # 计算重排序分数
-            rerank_scores = model.predict(query_doc_pairs)
+            rerank_scores = model.predict(query_doc_pairs, show_progress_bar=False)
             
+            # 检查 rerank_scores 是否有效
+            if rerank_scores is None:
+                logger.warning("重排序模型返回 None，跳过重排序")
+                return chunks
+
             # 如果返回的是数组，取第一列（相关性分数）
             if isinstance(rerank_scores, np.ndarray) and rerank_scores.ndim > 1:
                 rerank_scores = rerank_scores[:, 0]
             
             # 添加重排序分数到结果中
             for i, chunk in enumerate(chunks):
-                chunk["rerank_score"] = float(rerank_scores[i])
+                score = rerank_scores[i]
+                # 将 rerank_score 映射到 similarity_score
+                chunk["similarity_score"] = float(score)
+                chunk["rerank_score"] = float(score)
             
             # 按重排序分数降序排序
             reranked_chunks = sorted(chunks, key=lambda x: x["rerank_score"], reverse=True)

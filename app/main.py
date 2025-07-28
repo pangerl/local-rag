@@ -6,8 +6,6 @@ FastAPI 应用程序主入口
 import logging
 import sys
 import time
-import signal
-import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, Request, HTTPException
@@ -34,7 +32,6 @@ settings = Settings()
 logger = setup_logging()
 
 # 全局状态管理
-_shutdown_event = asyncio.Event()
 _startup_complete = False
 
 
@@ -69,25 +66,6 @@ def _validate_environment():
         raise
 
 
-def _setup_signal_handlers():
-    """设置信号处理器（仅在主线程中有效）"""
-    try:
-        def signal_handler(signum, frame):
-            logger.info(f"收到信号 {signum}，开始优雅关闭...")
-            _shutdown_event.set()
-        
-        # 注册信号处理器（仅在主线程中有效）
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
-        logger.info("信号处理器设置完成")
-        
-    except ValueError as e:
-        # 在非主线程中会抛出 ValueError
-        logger.warning(f"无法设置信号处理器（非主线程）: {e}")
-    except Exception as e:
-        logger.error(f"设置信号处理器失败: {e}")
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用程序生命周期管理"""
@@ -101,9 +79,6 @@ async def lifespan(app: FastAPI):
     try:
         # 验证环境
         _validate_environment()
-        
-        # 设置信号处理器
-        _setup_signal_handlers()
         
         # 记录配置信息
         logger.info(f"API 服务地址: http://{settings.API_HOST}:{settings.API_PORT}")
@@ -284,30 +259,21 @@ async def simple_health_check():
 
 def run_server():
     """运行服务器"""
+    # uvicorn.run() 会自动处理信号（如 Ctrl+C）并触发 FastAPI 的 'lifespan' 事件,
+    # 从而实现优雅的启动和关闭。
+    # 无需手动设置信号处理器或捕捉 KeyboardInterrupt。
     try:
-        logger.info(f"启动 FastAPI 服务器: {settings.API_HOST}:{settings.API_PORT}")
-        
-        # 配置 uvicorn
-        config = uvicorn.Config(
-            app="app.main:app",
+        uvicorn.run(
+            "app.main:app",
             host=settings.API_HOST,
             port=settings.API_PORT,
-            reload=False,  # 生产环境中应该设为 False
+            reload=False,
             log_level=settings.LOG_LEVEL.lower(),
             access_log=True,
-            use_colors=True,
-            loop="asyncio"
         )
-        
-        server = uvicorn.Server(config)
-        
-        # 运行服务器
-        server.run()
-        
-    except KeyboardInterrupt:
-        logger.info("收到键盘中断信号，正在关闭服务器...")
     except Exception as e:
-        logger.error(f"服务器运行失败: {str(e)}", exc_info=True)
+        # 主要捕获端口占用等 uvicorn 启动前的异常
+        logger.error(f"服务器启动失败: {str(e)}", exc_info=True)
         sys.exit(1)
 
 

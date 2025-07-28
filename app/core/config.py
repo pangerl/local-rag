@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     # 检索配置
     DEFAULT_RETRIEVAL_K: int = Field(default=10, description="默认候选文档数量")
     DEFAULT_TOP_K: int = Field(default=3, description="默认返回结果数量")
+    RERANKER_MAX_LENGTH: int = Field(default=512, description="重排序模型最大序列长度")
     
     # 日志配置
     LOG_LEVEL: str = Field(default="INFO", description="日志级别")

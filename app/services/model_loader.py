@@ -5,9 +5,10 @@
 
 import os
 import logging
+import warnings
 from pathlib import Path
-from typing import Optional, Dict, Any
-from sentence_transformers import SentenceTransformer
+from typing import Optional, Dict, Any, Union
+from sentence_transformers import SentenceTransformer, CrossEncoder
 
 from app.core.config import Settings
 from app.core.exceptions import ModelLoadError
@@ -33,7 +34,7 @@ class ModelLoader:
         """
         self.settings = settings
         self.embedding_model: Optional[SentenceTransformer] = None
-        self.reranker_model: Optional[SentenceTransformer] = None
+        self.reranker_model: Optional[CrossEncoder] = None
         self._models_loaded = False
         
         logger.info(f"模型加载器初始化完成，嵌入模型路径: {self.settings.embedding_model_path}")
@@ -146,12 +147,12 @@ class ModelLoader:
             logger.error(error_msg)
             raise ModelLoadError(error_msg) from e
     
-    def load_reranker_model(self) -> SentenceTransformer:
+    def load_reranker_model(self) -> CrossEncoder:
         """
         加载重排序模型，严格从本地路径加载
         
         Returns:
-            SentenceTransformer: 加载的重排序模型实例
+            CrossEncoder: 加载的重排序模型实例
             
         Raises:
             ModelLoadError: 当模型加载失败时抛出异常
@@ -168,14 +169,21 @@ class ModelLoader:
             os.environ['TRANSFORMERS_OFFLINE'] = '1'
             os.environ['HF_HUB_OFFLINE'] = '1'
             
-            # 从本地路径加载模型
-            self.reranker_model = SentenceTransformer(
-                model_path,
-                device='cpu',  # 默认使用 CPU，可根据需要调整
-                cache_folder=None  # 禁用缓存文件夹
-            )
+            # 忽略特定的 FutureWarning，因为它源于依赖库内部，我们无法直接修复
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message="`encoder_attention_mask` is deprecated and will be removed in version 4.55.0.*",
+                    category=FutureWarning
+                )
+                # 使用 CrossEncoder 加载重排序模型
+                self.reranker_model = CrossEncoder(
+                    model_path,
+                    device='cpu',  # 默认使用 CPU
+                    max_length=self.settings.RERANKER_MAX_LENGTH
+                )
             
-            logger.info(f"重排序模型加载成功: {model_path}")
+            logger.info(f"重排序模型 (CrossEncoder) 加载成功: {model_path}")
             return self.reranker_model
             
         except Exception as e:
@@ -183,12 +191,12 @@ class ModelLoader:
             logger.error(error_msg)
             raise ModelLoadError(error_msg) from e
     
-    def load_all_models(self) -> Dict[str, SentenceTransformer]:
+    def load_all_models(self) -> Dict[str, Union[SentenceTransformer, CrossEncoder]]:
         """
         加载所有模型
         
         Returns:
-            Dict[str, SentenceTransformer]: 包含所有加载模型的字典
+            Dict[str, Union[SentenceTransformer, CrossEncoder]]: 包含所有加载模型的字典
             
         Raises:
             ModelLoadError: 当任何模型加载失败时抛出异常
