@@ -299,3 +299,54 @@ gauges
 2025-07-27 22:57:00 - app.middleware.request_tracker - INFO - request_tracker.py:62 - dispatch - [553e79b0] 请求开始: GET / 来自 testclient
 2025-07-27 22:57:00 - app.middleware.request_tracker - INFO - request_tracker.py:126 - dispatch - [553e79b0] 请求完成: GET / - 状态码: 200 ✅ - 耗时: 0.001s
 2025-07-27 22:57:00 - httpx - INFO - _client.py:1025 - _send_single_request - HTTP Request: GET http://testserver/ "HTTP/1.1 200 OK"
+2025-07-28 14:36:03 - local_rag - INFO - logging_config.py:232 - setup_logging - 增强日志系统初始化完成
+2025-07-28 14:36:03 - local_rag - INFO - main.py:288 - run_server - 启动 FastAPI 服务器: 0.0.0.0:8000
+2025-07-28 14:36:03 - app.middleware.request_tracker - INFO - request_tracker.py:32 - __init__ - 请求追踪中间件初始化完成
+2025-07-28 14:36:03 - local_rag - INFO - main.py:97 - lifespan - ==================================================
+2025-07-28 14:36:03 - local_rag - INFO - main.py:98 - lifespan - Local RAG 系统启动中...
+2025-07-28 14:36:03 - local_rag - INFO - main.py:99 - lifespan - ==================================================
+2025-07-28 14:36:03 - local_rag - INFO - main.py:43 - _validate_environment - 验证运行环境...
+2025-07-28 14:36:03 - local_rag - INFO - main.py:51 - _validate_environment - 路径验证结果: {'embedding_model': True, 'reranker_model': True, 'chroma_db_dir': True, 'log_dir': True}
+2025-07-28 14:36:03 - local_rag - INFO - main.py:66 - _validate_environment - 必要目录创建完成
+2025-07-28 14:36:03 - local_rag - INFO - main.py:82 - _setup_signal_handlers - 信号处理器设置完成
+2025-07-28 14:36:03 - local_rag - INFO - main.py:109 - lifespan - API 服务地址: http://0.0.0.0:8000
+2025-07-28 14:36:03 - local_rag - INFO - main.py:110 - lifespan - 嵌入模型路径: models/bge-small-zh-v1.5
+2025-07-28 14:36:03 - local_rag - INFO - main.py:111 - lifespan - 重排序模型路径: models/bge-reranker-base
+2025-07-28 14:36:03 - local_rag - INFO - main.py:112 - lifespan - ChromaDB 路径: data/chroma_db
+2025-07-28 14:36:03 - local_rag - INFO - main.py:113 - lifespan - 日志级别: INFO
+2025-07-28 14:36:03 - local_rag - INFO - main.py:116 - lifespan - 初始化服务组件...
+2025-07-28 14:36:03 - app.services.database - INFO - database.py:39 - __init__ - ChromaDB 服务初始化，数据库路径: data/chroma_db
+2025-07-28 14:36:03 - app.services.model_loader - INFO - model_loader.py:39 - __init__ - 模型加载器初始化完成，嵌入模型路径: models/bge-small-zh-v1.5
+2025-07-28 14:36:03 - app.services.model_loader - INFO - model_loader.py:40 - __init__ - 重排序模型路径: models/bge-reranker-base
+2025-07-28 14:36:03 - app.core.document_processor - INFO - document_processor.py:30 - __init__ - DocumentProcessor 初始化完成
+2025-07-28 14:36:03 - app.core.chunker - INFO - chunker.py:27 - __init__ - JiebaChunker 初始化完成
+2025-07-28 14:36:03 - app.services.vector_store - INFO - vector_store.py:43 - __init__ - 向量存储服务初始化完成
+2025-07-28 14:36:03 - app.services.document_service - INFO - document_service.py:65 - __init__ - 文档处理服务初始化完成
+2025-07-28 14:36:03 - app.services.retriever - INFO - retriever.py:57 - __init__ - 向量检索器初始化完成
+2025-07-28 14:36:03 - app.api.routes - INFO - routes.py:77 - init_services - API 服务初始化完成
+2025-07-28 14:36:03 - local_rag - INFO - main.py:120 - lifespan - 启动系统监控...
+2025-07-28 14:36:03 - app.core.monitoring - INFO - monitoring.py:259 - start_monitoring - 系统监控已启动，监控间隔: 30秒
+2025-07-28 14:36:03 - local_rag - INFO - main.py:126 - lifespan - ==================================================
+2025-07-28 14:36:03 - local_rag - INFO - main.py:127 - lifespan - Local RAG 系统启动完成！
+2025-07-28 14:36:03 - local_rag - INFO - main.py:128 - lifespan - API 文档地址: http://0.0.0.0:8000/docs
+2025-07-28 14:36:03 - local_rag - INFO - main.py:129 - lifespan - ==================================================
+2025-07-28 14:37:25 - app.middleware.request_tracker - INFO - request_tracker.py:62 - dispatch - [ab2eacf3] 请求开始: GET / 来自 127.0.0.1
+2025-07-28 14:37:25 - app.middleware.request_tracker - INFO - request_tracker.py:126 - dispatch - [ab2eacf3] 请求完成: GET / - 状态码: 200 ✅ - 耗时: 0.001s
+2025-07-28 14:37:25 - app.middleware.request_tracker - INFO - request_tracker.py:62 - dispatch - [0153d279] 请求开始: GET /favicon.ico 来自 127.0.0.1
+2025-07-28 14:37:25 - app.middleware.request_tracker - INFO - request_tracker.py:126 - dispatch - [0153d279] 请求完成: GET /favicon.ico - 状态码: 404 ❌ - 耗时: 0.000s
+2025-07-28 14:37:35 - app.middleware.request_tracker - INFO - request_tracker.py:62 - dispatch - [11462b8b] 请求开始: GET /api/v1/monitoring/metrics 来自 127.0.0.1
+2025-07-28 14:37:35 - app.api.monitoring - INFO - monitoring.py:64 - get_metrics_summary - 获取指标摘要，时间窗口: 300秒
+2025-07-28 14:37:35 - app.middleware.request_tracker - INFO - request_tracker.py:126 - dispatch - [11462b8b] 请求完成: GET /api/v1/monitoring/metrics - 状态码: 200 ✅ - 耗时: 0.004s
+2025-07-28 14:40:07 - app.middleware.request_tracker - INFO - request_tracker.py:62 - dispatch - [4f9bb5d1] 请求开始: GET /api/v1/ingest 来自 127.0.0.1
+2025-07-28 14:40:07 - app.middleware.request_tracker - INFO - request_tracker.py:126 - dispatch - [4f9bb5d1] 请求完成: GET /api/v1/ingest - 状态码: 405 ❌ - 耗时: 0.001s
+2025-07-28 14:40:09 - app.middleware.request_tracker - INFO - request_tracker.py:62 - dispatch - [b9ae6adc] 请求开始: GET /api/v1/health 来自 127.0.0.1
+2025-07-28 14:40:09 - app.api.routes - INFO - routes.py:313 - health_check - 执行系统健康检查
+2025-07-28 14:40:09 - app.services.database - INFO - database.py:60 - connect - 正在连接到 ChromaDB: data/chroma_db
+2025-07-28 14:40:10 - app.services.database - INFO - database.py:76 - connect - ChromaDB 连接成功: data/chroma_db
+2025-07-28 14:40:10 - app.services.database - INFO - database.py:118 - create_or_get_collection - 创建或获取集合: documents
+2025-07-28 14:40:10 - app.services.database - INFO - database.py:123 - create_or_get_collection - 获取到现有集合: documents
+2025-07-28 14:40:10 - app.services.database - INFO - database.py:118 - create_or_get_collection - 创建或获取集合: documents
+2025-07-28 14:40:10 - app.services.database - INFO - database.py:123 - create_or_get_collection - 获取到现有集合: documents
+2025-07-28 14:40:10 - app.services.database - INFO - database.py:174 - get_collection_info - 集合信息: {'name': 'documents', 'count': 0, 'metadata': {'description': 'Local RAG 文档向量存储集合'}, 'id': UUID('fe8583c2-3a60-415e-a8b8-8abae6448636')}
+2025-07-28 14:40:10 - app.api.routes - INFO - routes.py:334 - health_check - 健康检查完成，状态: unhealthy
+2025-07-28 14:40:10 - app.middleware.request_tracker - INFO - request_tracker.py:126 - dispatch - [b9ae6adc] 请求完成: GET /api/v1/health - 状态码: 200 ✅ - 耗时: 0.180s

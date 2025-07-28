@@ -11,3 +11,5 @@ wheels/
 models/
 .DS_Store
 .idea/
+data/
+logs/
