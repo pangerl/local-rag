@@ -5,7 +5,7 @@
 
 import logging
 import time
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Union
 import numpy as np
 from sentence_transformers import SentenceTransformer, CrossEncoder
 
@@ -115,9 +115,13 @@ class VectorRetriever:
             model = self._ensure_embedding_model()
             logger.debug(f"开始向量化查询: {query[:50]}...")
             
+            # 根据 BGE 模型文档，为检索任务的查询添加指令以获得更佳性能
+            # 参考: https://huggingface.co/BAAI/bge-small-zh-v1.5
+            instruction = "为这个句子生成表示以用于检索相关文章："
+            
             # 生成查询向量
             query_vector = model.encode(
-                [query],
+                [f"{instruction}{query}"],
                 convert_to_numpy=True,
                 show_progress_bar=False,
                 normalize_embeddings=True  # 归一化向量，提高检索效果
@@ -213,34 +217,30 @@ class VectorRetriever:
             logger.debug(f"开始重排序 {len(chunks)} 个候选结果")
             
             # 准备查询-文档对
-            query_doc_pairs = []
-            for chunk in chunks:
-                query_doc_pairs.append([query, chunk["text"]])
+            query_doc_pairs = [[query, chunk["text"]] for chunk in chunks]
             
             # 计算重排序分数
-            rerank_scores = model.predict(query_doc_pairs, show_progress_bar=False)
+            scores = model.predict(query_doc_pairs, show_progress_bar=False)
             
-            # 检查 rerank_scores 是否有效
-            if rerank_scores is None:
+            if scores is None:
                 logger.warning("重排序模型返回 None，跳过重排序")
                 return chunks
 
-            # 如果返回的是数组，取第一列（相关性分数）
-            if isinstance(rerank_scores, np.ndarray) and rerank_scores.ndim > 1:
-                rerank_scores = rerank_scores[:, 0]
+            # 为静态分析器明确 scores_to_use 的类型
+            scores_to_use: Union[np.ndarray, List[float]]
+            if isinstance(scores, np.ndarray) and scores.ndim > 1:
+                scores_to_use = scores[:, 0]
+            else:
+                scores_to_use = scores
             
-            # 添加重排序分数到结果中
-            for i, chunk in enumerate(chunks):
-                score = rerank_scores[i]
-                # 将 rerank_score 映射到 similarity_score
-                chunk["similarity_score"] = float(score)
+            # 使用 zip 迭代并添加重排序分数
+            for chunk, score in zip(chunks, scores_to_use):
                 chunk["rerank_score"] = float(score)
             
             # 按重排序分数降序排序
             reranked_chunks = sorted(chunks, key=lambda x: x["rerank_score"], reverse=True)
             
-            logger.debug(f"重排序完成，结果已按相关性重新排序")
-            
+            logger.debug("重排序完成，结果已按相关性重新排序")
             return reranked_chunks
             
         except Exception as e:
