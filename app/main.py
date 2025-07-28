@@ -194,7 +194,7 @@ app = FastAPI(
     version="1.0.0",
     contact={
         "name": "Local RAG System",
-        "url": "https://github.com/example/local-rag",
+        "url": "https://github.com/pangerl/local-rag",
     },
     license_info={
         "name": "MIT",
