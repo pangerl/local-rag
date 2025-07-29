@@ -15,7 +15,7 @@ if __name__ == "__main__":
     print("启动 Local RAG 系统...")
     print("按 Ctrl+C 停止服务器")
     print("-" * 50)
-    
+
     try:
         run_server()
     except KeyboardInterrupt:
