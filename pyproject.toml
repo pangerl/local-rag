@@ -30,4 +30,5 @@ dependencies = [
     "unstructured>=0.18.11",
     "langchain-chroma>=0.2.5",
     "langchain-huggingface>=0.3.1",
+    "langchain-community>=0.3.27",
 ]
