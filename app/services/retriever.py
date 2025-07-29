@@ -7,7 +7,8 @@ import logging
 import time
 from typing import List, Dict, Any, Optional, Tuple, Union
 import numpy as np
-from sentence_transformers import SentenceTransformer, CrossEncoder
+from sentence_transformers import CrossEncoder
+from langchain_huggingface import HuggingFaceEmbeddings
 
 from app.core.config import Settings
 from app.services.database import ChromaDBService
@@ -41,7 +42,7 @@ class VectorRetriever:
         self.model_loader = model_loader
 
         # 模型缓存
-        self.embedding_model: Optional[SentenceTransformer] = None
+        self.embedding_model: Optional[HuggingFaceEmbeddings] = None
         self.reranker_model: Optional[CrossEncoder] = None
 
         # 检索统计
@@ -56,12 +57,12 @@ class VectorRetriever:
 
         logger.info("向量检索器初始化完成")
 
-    def _ensure_embedding_model(self) -> SentenceTransformer:
+    def _ensure_embedding_model(self) -> HuggingFaceEmbeddings:
         """
         确保嵌入模型已加载
 
         Returns:
-            SentenceTransformer: 嵌入模型实例
+            HuggingFaceEmbeddings: 嵌入模型实例
 
         Raises:
             ModelLoadError: 当模型加载失败时抛出异常
@@ -117,18 +118,18 @@ class VectorRetriever:
 
             # 根据 BGE 模型文档，为检索任务的查询添加指令以获得更佳性能
             # 参考: https://huggingface.co/BAAI/bge-small-zh-v1.5
+            # 注意：HuggingFaceEmbeddings 不会自动添加这个，需要手动处理
             instruction = "为这个句子生成表示以用于检索相关文章："
+            instructed_query = f"{instruction}{query}"
 
-            # 生成查询向量
-            query_vector = model.encode(
-                [f"{instruction}{query}"],
-                convert_to_numpy=True,
-                show_progress_bar=False,
-                normalize_embeddings=True  # 归一化向量，提高检索效果
-            )
+            # 使用 embed_query 方法生成向量
+            query_vector_list = model.embed_query(instructed_query)
+
+            # 转换为 numpy 数组
+            query_vector = np.array(query_vector_list, dtype=np.float32)
 
             logger.debug(f"查询向量化完成，维度: {query_vector.shape}")
-            return query_vector[0]  # 返回单个向量
+            return query_vector
 
         except Exception as e:
             error_msg = f"查询向量化失败: {str(e)}"

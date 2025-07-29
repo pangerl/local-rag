@@ -25,6 +25,7 @@ unstructured[local-inference]>=0.14.0
 numpy>=1.24.0
 python-multipart>=0.0.6
 psutil>=5.9.0
+chardet>=5.0.0
 
 # 开发和测试
 pluggy

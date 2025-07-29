@@ -8,9 +8,9 @@ import uuid
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from langchain_core.documents import Document
-from sentence_transformers import SentenceTransformer
+from langchain_community.vectorstores.utils import filter_complex_metadata
 
 from app.core.config import Settings
 from app.services.database import ChromaDBService
@@ -39,41 +39,25 @@ class VectorStore:
         self.settings = settings
         self.db_service = db_service
         self.model_loader = model_loader
-        self.embedding_model: Optional[SentenceTransformer] = None
-        self.vector_db: Optional[Chroma] = None
+
+        try:
+            logger.info("初始化 LangChain Chroma 向量存储...")
+            embedding_function = self.model_loader.load_embedding_model()
+
+            self.vector_db: Chroma = Chroma(
+                client=self.db_service.connect(),
+                collection_name=self.settings.COLLECTION_NAME,
+                embedding_function=embedding_function
+            )
+            logger.info("LangChain Chroma 向量存储初始化成功")
+        except Exception as e:
+            error_msg = f"初始化 LangChain Chroma 实例失败: {e}"
+            logger.error(error_msg)
+            if isinstance(e, ModelLoadError):
+                raise
+            raise DatabaseError(error_msg) from e
 
         logger.info("向量存储服务初始化完成")
-
-    def _get_vector_db(self) -> Chroma:
-        """
-        获取或初始化 LangChain Chroma 向量存储实例
-
-        Returns:
-            Chroma: LangChain Chroma 实例
-
-        Raises:
-            ModelLoadError: 当嵌入模型加载失败时
-            DatabaseError: 当数据库连接失败时
-        """
-        if self.vector_db is None:
-            try:
-                logger.info("初始化 LangChain Chroma 向量存储...")
-                embedding_function = self.model_loader.load_embedding_model()
-
-                self.vector_db = Chroma(
-                    client=self.db_service.connect(),
-                    collection_name=self.settings.COLLECTION_NAME,
-                    embedding_function=embedding_function
-                )
-                logger.info("LangChain Chroma 向量存储初始化成功")
-            except Exception as e:
-                error_msg = f"初始化 LangChain Chroma 实例失败: {e}"
-                logger.error(error_msg)
-                if isinstance(e, ModelLoadError):
-                    raise
-                raise DatabaseError(error_msg) from e
-
-        return self.vector_db
 
     def add_documents(self, documents: List[Document]) -> Dict[str, Any]:
         """
@@ -94,26 +78,27 @@ class VectorStore:
             return {"chunks_stored": 0, "status": "skipped"}
 
         try:
-            vector_db = self._get_vector_db()
+            # 过滤掉 LangChain 不支持的复杂元数据类型
+            filtered_documents = filter_complex_metadata(documents)
 
             # 为每个 document 生成一个唯一的 ID
-            ids = [str(uuid.uuid4()) for _ in documents]
+            ids = [str(uuid.uuid4()) for _ in filtered_documents]
 
-            logger.info(f"开始向 ChromaDB 添加 {len(documents)} 个文档分片...")
-            vector_db.add_documents(documents=documents, ids=ids)
+            logger.info(f"开始向 ChromaDB 添加 {len(filtered_documents)} 个文档分片...")
+            self.vector_db.add_documents(documents=filtered_documents, ids=ids)
 
             # 从第一个文档的元数据中获取源路径
             doc_path = "Unknown"
-            if documents[0].metadata and 'source' in documents[0].metadata:
-                doc_path = documents[0].metadata['source']
+            if filtered_documents and filtered_documents[0].metadata and 'source' in filtered_documents[0].metadata:
+                doc_path = filtered_documents[0].metadata['source']
 
-            logger.info(f"文档 '{doc_path}' 的 {len(documents)} 个分片存储完成")
+            logger.info(f"文档 '{doc_path}' 的 {len(filtered_documents)} 个分片存储完成")
 
             return {
                 "document_path": doc_path,
-                "chunks_stored": len(documents),
+                "chunks_stored": len(filtered_documents),
                 "status": "success",
-                "collection_name": vector_db._collection.name,
+                "collection_name": self.vector_db._collection.name,
             }
         except Exception as e:
             error_msg = f"通过 LangChain 添加文档失败: {e}"
@@ -135,10 +120,8 @@ class VectorStore:
         try:
             logger.info(f"开始删除文档 {document_path} 的分片")
 
-            vector_db = self._get_vector_db()
-
             # 在 LangChain v0.1+ 中，直接访问 collection
-            collection = vector_db._collection
+            collection = self.vector_db._collection
 
             # 查询该文档的所有分片
             results = collection.get(
@@ -184,8 +167,7 @@ class VectorStore:
         try:
             logger.info(f"获取文档 {document_path} 的分片信息")
 
-            vector_db = self._get_vector_db()
-            collection = vector_db._collection
+            collection = self.vector_db._collection
 
             # 查询该文档的所有分片
             results = collection.get(
@@ -239,8 +221,7 @@ class VectorStore:
         try:
             logger.info("获取所有已存储文档列表")
 
-            vector_db = self._get_vector_db()
-            collection = vector_db._collection
+            collection = self.vector_db._collection
 
             # 获取所有元数据
             results = collection.get(include=["metadatas"])

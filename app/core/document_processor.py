@@ -52,29 +52,24 @@ class DocumentProcessor:
             logger.warning(f"文件为空: {file_path}")
             return []
 
-        # 尝试的编码列表，优先使用 UTF-8
-        encodings = ['utf-8', 'gbk', 'gb2312', 'latin-1']
+        try:
+            # UnstructuredLoader 会自动处理不同文件的编码
+            loader = UnstructuredLoader(file_path)
+            documents = loader.load()
 
-        for encoding in encodings:
-            try:
-                loader = UnstructuredLoader(file_path, encoding=encoding)
-                documents = loader.load()
+            # UnstructuredLoader 可能会返回多个 Document，
+            # 通常第一个是主要内容，其余是元数据或附加部分。
+            # 在这里我们简单地将它们全部返回，并确保元数据正确。
+            for doc in documents:
+                if 'source' not in doc.metadata:
+                    doc.metadata['source'] = file_path
 
-                # UnstructuredLoader 可能会返回多个 Document，
-                # 通常第一个是主要内容，其余是元数据或附加部分。
-                # 在这里我们简单地将它们全部返回，并确保元数据正确。
-                for doc in documents:
-                    if 'source' not in doc.metadata:
-                        doc.metadata['source'] = file_path
+            logger.info(f"成功加载文件: {file_path}, 生成 {len(documents)} 个 Document")
+            return documents
 
-                logger.info(f"成功加载文件: {file_path} (编码: {encoding}), 生成 {len(documents)} 个 Document")
-                return documents
-
-            except Exception as e:
-                logger.debug(f"使用编码 {encoding} 加载失败: {file_path}, 错误: {e}")
-                continue
-
-        raise ValueError(f"所有编码都无法加载文件: {file_path}")
+        except Exception as e:
+            logger.error(f"加载文件失败: {file_path}, 错误: {e}")
+            raise ValueError(f"无法加载文件: {file_path}") from e
 
     def get_file_info(self, file_path: str) -> Dict[str, Any]:
         """
