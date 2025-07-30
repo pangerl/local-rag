@@ -85,7 +85,7 @@ snapshot_download(
 
 print('下载重排序模型...')
 snapshot_download(
-    repo_id='BAAI/bge-reranker-base', 
+    repo_id='BAAI/bge-reranker-base',
     local_dir=models_dir / 'bge-reranker-base',
     local_dir_use_symlinks=False
 )
@@ -165,151 +165,83 @@ local-rag/
 
 ### 环境变量配置
 
-创建 `.env` 文件来覆盖默认配置：
+项目通过 `.env` 文件进行配置。为了方便起步，您可以复制 `.env.template` 文件来创建自己的配置文件：
 
 ```bash
-# 模型配置
-MODEL_BASE_PATH=models
-EMBEDDING_MODEL_DIR=bge-small-zh-v1.5
-RERANKER_MODEL_DIR=bge-reranker-base
-
-# 数据库配置
-CHROMA_DB_PATH=data/chroma_db
-COLLECTION_NAME=documents
-
-# 分片配置
-DEFAULT_CHUNK_SIZE=300
-DEFAULT_CHUNK_OVERLAP=50
-
-# 检索配置
-DEFAULT_RETRIEVAL_K=10
-DEFAULT_TOP_K=3
-
-# API 配置
-API_HOST=0.0.0.0
-API_PORT=8000
-
-# 日志配置
-LOG_LEVEL=INFO
-LOG_FILE=logs/app.log
+cp .env.template .env
 ```
+
+然后根据需要编辑 `.env` 文件。
 
 ### 配置参数说明
 
+下表列出了所有可用的配置参数及其默认值。
+
 | 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `DEFAULT_CHUNK_SIZE` | 300 | 文本分片大小（词元数量） |
-| `DEFAULT_CHUNK_OVERLAP` | 50 | 相邻分片重叠（词元数量） |
-| `DEFAULT_RETRIEVAL_K` | 10 | 候选文档检索数量 |
-| `DEFAULT_TOP_K` | 3 | 最终返回结果数量 |
-| `API_PORT` | 8000 | API 服务端口 |
-| `LOG_LEVEL` | INFO | 日志级别 (DEBUG/INFO/WARNING/ERROR) |
+|-------------------------|--------------------------|----------------------------------|
+| `MODEL_BASE_PATH` | `models` | 模型文件基础路径 |
+| `EMBEDDING_MODEL_DIR` | `bge-small-zh-v1.5` | 嵌入模型目录名 |
+| `RERANKER_MODEL_DIR` | `bge-reranker-base` | 重排序模型目录名 |
+| `CHROMA_DB_PATH` | `data/chroma_db` | ChromaDB 数据库路径 |
+| `COLLECTION_NAME` | `documents` | 文档集合名称 |
+| `DEFAULT_CHUNK_SIZE` | `500` | 默认分片大小（词元数） |
+| `DEFAULT_CHUNK_OVERLAP` | `50` | 默认分片重叠（词元数） |
+| `DEFAULT_RETRIEVAL_K` | `10` | 默认候选文档数量 |
+| `DEFAULT_TOP_K` | `3` | 默认返回结果数量 |
+| `RERANKER_MAX_LENGTH` | `512` | 重排序模型最大序列长度 |
+| `LOG_LEVEL` | `INFO` | 日志级别 |
+| `LOG_FILE` | `logs/app.log` | 日志文件路径 |
+| `API_HOST` | `0.0.0.0` | API 服务主机 |
+| `API_PORT` | `8000` | API 服务端口 |
+| `SUPPORTED_FORMATS` | `['.txt', '.md', '.pdf', ...]` | 支持的文档格式 (见 .env.template) |
 
-## 📚 API 使用指南
+## 📖 API 使用指南
 
-### 1. 文档摄取 API
+本系统提供了一套完整的 RESTful API 用于文档管理和系统监控。所有 API 端点都支持标准的 HTTP 方法，并返回 JSON 格式的响应。
 
-**端点**: `POST /api/v1/ingest`
+### 主要 API 功能
 
-**请求示例**:
+- **文档管理**:
+  - `POST /api/v1/ingest`: 从本地路径摄取文档。
+  - `POST /api/v1/ingest/upload`: 通过文件上传方式摄取文档。
+  - `POST /api/v1/retrieve`: 根据查询检索文档片段。
+  - `GET /api/v1/documents`: 获取所有已处理的文档列表。
+  - `DELETE /api/v1/documents/{document_path}`: 删除指定的文档。
+- **系统与监控**:
+  - `GET /api/v1/health`: 检查系统健康状态。
+  - `GET /api/v1/stats`: 获取系统运行统计数据。
+  - `GET /api/v1/monitoring/metrics`: 获取详细的性能指标。
+  - `GET /api/v1/monitoring/system`: 获取系统资源使用情况。
 
-```bash
-curl -X POST "http://localhost:8000/api/v1/ingest" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "document_path": "/path/to/document.txt",
-    "chunk_size": 300,
-    "chunk_overlap": 50
-  }'
-```
+### 交互式文档
 
-**Python 示例**:
+要查看所有 API 的详细参数、响应模型和在线测试工具，请访问服务启动后自动生成的交互式文档：
 
-```python
-import requests
+- **Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **ReDoc**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
 
-response = requests.post(
-    "http://localhost:8000/api/v1/ingest",
-    json={
-        "document_path": "documents/example.txt",
-        "chunk_size": 300,
-        "chunk_overlap": 50
-    }
-)
+### 详细使用示例
 
-result = response.json()
-print(f"处理完成: {result['message']}")
-print(f"分片数量: {result['chunks_count']}")
-```
+我们提供了详细的 API 使用示例和客户端代码，包括 cURL、Python 和 JavaScript。这些示例可以帮助您快速集成和使用本系统。
 
-**响应示例**:
+请参阅 [**API 使用示例和最佳实践 (docs/API_EXAMPLES.md)**](docs/API_EXAMPLES.md) 获取完整指南。
 
-```json
-{
-  "message": "文档处理完成",
-  "document_path": "documents/example.txt",
-  "chunks_count": 15,
-  "processing_time": 2.34
-}
-```
+## 🖥️ 管理界面
 
-### 2. 文档检索 API
+本系统内置了一个基于 Web 的管理界面，方便用户进行文档管理和检索测试。
 
-**端点**: `POST /api/v1/retrieve`
+- **管理页面**: [http://localhost:8000/admin](http://localhost:8000/admin)
+- **检索页面**: [http://localhost:8000/admin/search](http://localhost:8000/admin/search)
 
-**请求示例**:
+### 功能概览
 
-```bash
-curl -X POST "http://localhost:8000/api/v1/retrieve" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "如何配置系统参数？",
-    "retrieval_k": 10,
-    "top_k": 3
-  }'
-```
+- **文档列表**: 查看所有已入库的文档，包括路径、分片数量、大小等信息。
+- **文件上传**: 直接通过浏览器上传一个或多个文档文件进行处理。
+- **文档删除**: 在列表中方便地删除不再需要的文档。
+- **实时检索**: 在检索页面输入查询，调整参数（如 Top K、是否使用重排器），并立即看到结果。
+- **系统监控**: （规划中）集成系统健康状态和关键指标的可视化图表。
 
-**Python 示例**:
-
-```python
-import requests
-
-response = requests.post(
-    "http://localhost:8000/api/v1/retrieve",
-    json={
-        "query": "如何配置系统参数？",
-        "retrieval_k": 10,
-        "top_k": 3
-    }
-)
-
-results = response.json()
-for i, result in enumerate(results['results'], 1):
-    print(f"结果 {i} (相关性: {result['score']:.3f}):")
-    print(f"内容: {result['content'][:100]}...")
-    print(f"来源: {result['metadata']['file_name']}")
-    print("-" * 50)
-```
-
-**响应示例**:
-
-```json
-{
-  "query": "如何配置系统参数？",
-  "results": [
-    {
-      "content": "系统配置通过 app/core/config.py 管理，支持环境变量覆盖...",
-      "score": 0.85,
-      "metadata": {
-        "file_name": "config_guide.txt",
-        "chunk_index": 2,
-        "file_path": "documents/config_guide.txt"
-      }
-    }
-  ],
-  "retrieval_time": 0.12
-}
-```
+这个界面对于快速验证、内容管理和功能演示非常有用，无需编写任何代码即可与系统的核心功能进行交互。
 
 ## 🔧 批量导入工具
 

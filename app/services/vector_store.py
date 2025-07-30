@@ -59,12 +59,17 @@ class VectorStore:
 
         logger.info("向量存储服务初始化完成")
 
-    def add_documents(self, documents: List[Document]) -> Dict[str, Any]:
+    def add_documents(self, documents: List[Document], document_path: str, file_size: int,
+                        text_length: int, chunk_size: int) -> Dict[str, Any]:
         """
         将 Document 对象列表添加到向量存储中
 
         Args:
             documents: LangChain Document 对象列表
+            document_path: 原始文档路径/文件名
+            file_size: 文件大小（字节）
+            text_length: 文本总长度
+            chunk_size: 分片大小
 
         Returns:
             Dict[str, Any]: 存储结果信息
@@ -81,21 +86,25 @@ class VectorStore:
             # 过滤掉 LangChain 不支持的复杂元数据类型
             filtered_documents = filter_complex_metadata(documents)
 
+            # 统一更新元数据，确保数据一致性
+            created_at_iso = datetime.now().isoformat()
+            for doc in filtered_documents:
+                doc.metadata['source'] = document_path
+                doc.metadata['created_at'] = created_at_iso
+                doc.metadata['file_size'] = file_size
+                doc.metadata['text_length'] = text_length
+                doc.metadata['chunk_size'] = chunk_size
+
             # 为每个 document 生成一个唯一的 ID
             ids = [str(uuid.uuid4()) for _ in filtered_documents]
 
             logger.info(f"开始向 ChromaDB 添加 {len(filtered_documents)} 个文档分片...")
             self.vector_db.add_documents(documents=filtered_documents, ids=ids)
 
-            # 从第一个文档的元数据中获取源路径
-            doc_path = "Unknown"
-            if filtered_documents and filtered_documents[0].metadata and 'source' in filtered_documents[0].metadata:
-                doc_path = filtered_documents[0].metadata['source']
-
-            logger.info(f"文档 '{doc_path}' 的 {len(filtered_documents)} 个分片存储完成")
+            logger.info(f"文档 '{document_path}' 的 {len(filtered_documents)} 个分片存储完成")
 
             return {
-                "document_path": doc_path,
+                "document_path": document_path,
                 "chunks_stored": len(filtered_documents),
                 "status": "success",
                 "collection_name": self.vector_db._collection.name,

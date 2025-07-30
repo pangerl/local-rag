@@ -413,7 +413,7 @@
             <div class="config-options">
                 <div class="form-group">
                     <label for="chunkSize">分片大小 (tokens)</label>
-                    <input type="number" id="chunkSize" value="300" min="50" max="2000">
+                    <input type="number" id="chunkSize" value="500" min="50" max="2000">
                 </div>
                 <div class="form-group">
                     <label for="chunkOverlap">分片重叠 (tokens)</label>
@@ -517,7 +517,7 @@
             // 验证文件格式
             const allowedExtensions = ['.txt', '.md', '.pdf', '.docx', '.doc', '.html', '.xml', '.eml', '.msg'];
             const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
-            
+
             if (!allowedExtensions.includes(fileExtension)) {
                 showMessage('不支持的文件格式，仅支持：' + allowedExtensions.join(', '), 'error');
                 return;
@@ -525,7 +525,7 @@
 
             selectedFile = file;
             document.getElementById('uploadBtn').disabled = false;
-            
+
             // 更新上传区域显示
             const uploadText = document.querySelector('.upload-text');
             uploadText.innerHTML = `
@@ -601,18 +601,19 @@
         async function loadDocuments() {
             const container = document.getElementById('documentsContainer');
             const loading = document.getElementById('listLoading');
-            
+
             loading.classList.add('show');
             container.innerHTML = '';
 
             try {
-                const response = await fetch('/api/v1/stats');
-                const result = await response.json();
+                const response = await fetch('/api/v1/documents');
+                const documents = await response.json();
 
                 if (response.ok) {
-                    displayDocuments(result);
+                    displayDocuments(documents);
                 } else {
-                    showMessage('获取文档列表失败', 'error');
+                    const errorResult = documents;
+                    showMessage(errorResult.detail || '获取文档列表失败', 'error');
                 }
             } catch (error) {
                 console.error('加载文档列表错误:', error);
@@ -623,15 +624,10 @@
         }
 
         // 显示文档列表
-        function displayDocuments(statsData) {
+        function displayDocuments(documentsData) {
             const container = document.getElementById('documentsContainer');
-            
-            // 从统计数据中提取文档信息
-            const processingStats = statsData.processing_stats || {};
-            const storageStats = statsData.storage_stats || {};
-            
-            // 如果没有文档，显示空状态
-            if (!storageStats.total_documents || storageStats.total_documents === 0) {
+
+            if (!documentsData || documentsData.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
                         <div class="empty-state-icon">📄</div>
@@ -648,8 +644,10 @@
                     <thead>
                         <tr>
                             <th>文档名称</th>
-                            <th>文档路径</th>
+                            <th>文本长度</th>
+                            <th>文件大小</th>
                             <th>分片数量</th>
+                            <th>分片大小</th>
                             <th>创建时间</th>
                             <th>操作</th>
                         </tr>
@@ -657,48 +655,28 @@
                     <tbody>
             `;
 
-            // 检查是否有详细的文档列表数据
-            // 从向量存储服务的list_stored_documents方法获取的数据应该在processing_stats中
-            const documentsData = processingStats.documents || [];
-            
-            if (documentsData.length > 0) {
-                // 显示具体的文档列表
-                documentsData.forEach(doc => {
-                    const fileName = doc.document_path.split('/').pop() || doc.document_path;
-                    const createdAt = formatDateTime(doc.created_at);
-                    
-                    tableHTML += `
-                        <tr>
-                            <td><strong>${fileName}</strong></td>
-                            <td><code class="document-path">${doc.document_path}</code></td>
-                            <td><span class="chunk-count">${doc.chunk_count}</span></td>
-                            <td>${createdAt}</td>
-                            <td>
-                                <button type="button" class="btn btn-danger btn-small" 
-                                        onclick="deleteDocument('${doc.document_path.replace(/'/g, '\\\'').replace(/"/g, '&quot;')}', '${fileName.replace(/'/g, '\\\'').replace(/"/g, '&quot;')}')">
-                                    删除
-                                </button>
-                            </td>
-                        </tr>
-                    `;
-                });
-            } else {
-                // 如果没有详细列表，显示汇总信息
+            documentsData.forEach(doc => {
+                const fileName = doc.document_path.split('/').pop() || doc.document_path;
+                const createdAt = formatDateTime(doc.created_at);
+                const fileSize = formatFileSize(doc.file_size || 0);
+
                 tableHTML += `
                     <tr>
-                        <td colspan="5" style="text-align: center; padding: 40px; color: #666;">
-                            <div>
-                                <h4>系统统计信息</h4>
-                                <p>总文档数：${storageStats.total_documents}</p>
-                                <p>总分片数：${storageStats.total_chunks}</p>
-                                <p>平均每文档分片数：${Math.round((storageStats.average_chunks_per_document || 0) * 100) / 100}</p>
-                                <br>
-                                <small>注：正在加载详细文档列表...</small>
-                            </div>
+                        <td><strong>${fileName}</strong></td>
+                        <td>${doc.text_length}</td>
+                        <td>${fileSize}</td>
+                        <td><span class="chunk-count">${doc.chunk_count}</span></td>
+                        <td>${doc.chunk_size}</td>
+                        <td>${createdAt}</td>
+                        <td>
+                            <button type="button" class="btn btn-danger btn-small"
+                                    onclick="deleteDocument('${doc.document_path.replace(/'/g, '\\\'').replace(/"/g, '"')}', '${fileName.replace(/'/g, '\\\'').replace(/"/g, '"')}')">
+                                删除
+                            </button>
                         </td>
                     </tr>
                 `;
-            }
+            });
 
             tableHTML += `
                     </tbody>
@@ -711,7 +689,7 @@
         // 删除文档
         function deleteDocument(documentPath, documentName) {
             documentToDelete = { path: documentPath, name: documentName };
-            document.getElementById('deleteMessage').textContent = 
+            document.getElementById('deleteMessage').textContent =
                 `确定要删除文档"${documentName}"吗？此操作将删除该文档的所有分片数据，且不可撤销。`;
             document.getElementById('deleteModal').classList.add('show');
         }
@@ -781,7 +759,7 @@
             if (e.key === 'Escape') {
                 const deleteModal = document.getElementById('deleteModal');
                 const uploadModal = document.getElementById('uploadModal');
-                
+
                 if (deleteModal.classList.contains('show')) {
                     closeDeleteModal();
                 } else if (uploadModal.classList.contains('show')) {
@@ -809,9 +787,9 @@
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${type}`;
             messageDiv.textContent = message;
-            
+
             messageArea.appendChild(messageDiv);
-            
+
             // 3秒后自动移除消息
             setTimeout(() => {
                 if (messageDiv.parentNode) {

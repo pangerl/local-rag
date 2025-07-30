@@ -334,9 +334,9 @@
             <h2>🔍 搜索查询</h2>
             <div class="search-area">
                 <div class="search-input-group">
-                    <input type="text" 
-                           id="searchInput" 
-                           class="search-input" 
+                    <input type="text"
+                           id="searchInput"
+                           class="search-input"
                            placeholder="请输入您要搜索的内容..."
                            onkeypress="handleSearchKeyPress(event)">
                     <button type="button" class="btn search-btn" onclick="performSearch()">
@@ -402,7 +402,7 @@
         // 执行搜索
         async function performSearch() {
             const query = document.getElementById('searchInput').value.trim();
-            
+
             if (!query) {
                 showMessage('请输入搜索内容', 'error');
                 return;
@@ -461,7 +461,7 @@
         function displaySearchResults(searchData) {
             const resultsContainer = document.getElementById('searchResults');
             const resultsSection = document.getElementById('resultsSection');
-            
+
             if (!searchData.results || searchData.results.length === 0) {
                 resultsContainer.innerHTML = `
                     <div class="empty-state">
@@ -475,11 +475,11 @@
             }
 
             let resultsHTML = '';
-            
+
             searchData.results.forEach((result, index) => {
                 const similarityScore = (result.similarity_score * 100).toFixed(1);
                 const rerankScore = result.rerank_score ? (result.rerank_score * 100).toFixed(1) : null;
-                
+
                 resultsHTML += `
                     <div class="result-item">
                         <div class="result-header">
@@ -497,9 +497,6 @@
                                 <span class="metadata-label">文档:</span> ${escapeHtml(result.metadata.source || '未知')}
                             </div>
                             <div class="metadata-item">
-                                <span class="metadata-label">分片索引:</span> ${result.metadata.chunk_index || 0}
-                            </div>
-                            <div class="metadata-item">
                                 <span class="metadata-label">ID:</span> ${escapeHtml(result.id)}
                             </div>
                         </div>
@@ -509,7 +506,7 @@
 
             resultsContainer.innerHTML = resultsHTML;
             resultsSection.style.display = 'block';
-            
+
             // 滚动到结果区域
             resultsSection.scrollIntoView({ behavior: 'smooth' });
         }
@@ -520,9 +517,9 @@
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${type}`;
             messageDiv.textContent = message;
-            
+
             messageArea.appendChild(messageDiv);
-            
+
             // 5秒后自动移除消息
             setTimeout(() => {
                 if (messageDiv.parentNode) {

@@ -64,13 +64,16 @@ class DocumentService:
 
         logger.info("文档处理服务初始化完成")
 
-    def process_document(self, document_path: str, chunk_size: Optional[int] = None,
-                        chunk_overlap: Optional[int] = None) -> Dict[str, Any]:
+    def process_document(self, document_path: str, original_filename: str, file_size: int,
+                         chunk_size: Optional[int] = None,
+                         chunk_overlap: Optional[int] = None) -> Dict[str, Any]:
         """
         处理单个文档的完整流程
 
         Args:
-            document_path: 文档路径
+            document_path: 文档在磁盘上的临时路径
+            original_filename: 用户上传的原始文件名
+            file_size: 文件大小（字节）
             chunk_size: 分片大小（词元数量），如果为 None 则使用默认值
             chunk_overlap: 分片重叠（词元数量），如果为 None 则使用默认值
 
@@ -93,31 +96,43 @@ class DocumentService:
                 logger.warning(f"文档加载后为空，处理终止: {document_path}")
                 return {"status": "skipped", "message": "Document is empty or unreadable."}
 
+            # 提前计算 text_length
+            text_length = sum(len(doc.page_content) for doc in documents)
+
+            # 确定 chunk_size
+            final_chunk_size = chunk_size or self.settings.DEFAULT_CHUNK_SIZE
+            final_chunk_overlap = chunk_overlap or self.settings.DEFAULT_CHUNK_OVERLAP
+
             # 2. Split: 将 Document 分割成块
             split_docs = self.text_splitter.split_documents(
                 documents,
-                chunk_size=chunk_size or self.settings.DEFAULT_CHUNK_SIZE,
-                chunk_overlap=chunk_overlap or self.settings.DEFAULT_CHUNK_OVERLAP
+                chunk_size=final_chunk_size,
+                chunk_overlap=final_chunk_overlap
             )
 
             # 3. Store: 将分割后的文档存入向量数据库
-            storage_result = self.vector_store.add_documents(split_docs)
+            storage_result = self.vector_store.add_documents(
+                split_docs,
+                document_path=original_filename,
+                file_size=file_size,
+                text_length=text_length,
+                chunk_size=final_chunk_size
+            )
 
             # 4. 更新统计信息
             processing_time = time.time() - start_time
             self._update_processing_stats(len(split_docs), processing_time)
 
             # 5. 准备返回结果
-            text_length = sum(len(doc.page_content) for doc in documents)
             result = {
-                "document_path": document_path,
+                "document_path": original_filename,
                 "status": "success",
                 "text_length": text_length,
                 "chunks_created": len(split_docs),
                 "chunks_stored": storage_result.get("chunks_stored", 0),
                 "processing_time": processing_time,
-                "chunk_size": chunk_size or self.settings.DEFAULT_CHUNK_SIZE,
-                "chunk_overlap": chunk_overlap or self.settings.DEFAULT_CHUNK_OVERLAP,
+                "chunk_size": final_chunk_size,
+                "chunk_overlap": final_chunk_overlap,
                 "collection_name": storage_result.get("collection_name")
             }
 
@@ -339,16 +354,48 @@ class DocumentService:
                 "storage_total_chunks": storage_stats.get("total_chunks", 0),
                 "average_chunks_per_document": storage_stats.get("average_chunks_per_document", 0)
             })
-            
+
             # 添加详细的文档列表信息
             documents_info = self.vector_store.list_stored_documents()
             stats["documents"] = documents_info.get("documents", [])
-            
+
         except Exception as e:
             logger.warning(f"获取存储统计信息失败: {str(e)}")
 
         return stats
 
+    def list_documents_with_stats(self) -> List[Dict[str, Any]]:
+        """
+        获取包含统计信息的文档列表
+
+        Returns:
+            List[Dict[str, Any]]: 包含每个文档详细信息的列表
+        """
+        try:
+            logger.info("从数据库服务获取文档列表和统计信息")
+            documents = self.db_service.list_documents()
+            return documents
+        except Exception as e:
+            logger.error(f"获取文档列表失败: {str(e)}")
+            raise DatabaseError(f"获取文档列表失败: {str(e)}") from e
+
+    def get_system_stats(self) -> Dict[str, Any]:
+        """
+        获取系统层面的统计信息
+
+        Returns:
+            Dict[str, Any]: 系统统计信息，如文档总数和分片总数
+        """
+        try:
+            logger.info("获取系统统计信息")
+            storage_stats = self.vector_store.get_storage_stats()
+            return {
+                "total_documents": storage_stats.get("total_documents", 0),
+                "total_chunks": storage_stats.get("total_chunks", 0),
+            }
+        except Exception as e:
+            logger.error(f"获取系统统计信息失败: {str(e)}")
+            raise DatabaseError(f"获取系统统计信息失败: {str(e)}") from e
 
     def _update_processing_stats(self, chunks_count: int, processing_time: float):
         """
