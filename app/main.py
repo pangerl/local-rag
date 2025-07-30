@@ -164,7 +164,7 @@ app = FastAPI(
     1. 首先使用 `/api/v1/ingest` 接口上传和处理文档
     2. 然后使用 `/api/v1/retrieve` 接口检索相关信息
     3. 使用 `/api/v1/health` 检查系统状态
-    4. 使用 `/api/v1/stats` 查看系统统计信息
+    4. 使用 `/api/v1/monitoring` 查看系统统计信息
     """,
     version="1.0.0",
     contact={
@@ -240,7 +240,6 @@ async def root():
             "ingest": "/api/v1/ingest",
             "retrieve": "/api/v1/retrieve",
             "health": "/api/v1/health",
-            "stats": "/api/v1/stats",
             "monitoring": {
                 "metrics": "/api/v1/monitoring/metrics",
                 "system": "/api/v1/monitoring/system",

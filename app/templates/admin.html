@@ -353,25 +353,27 @@
         <!-- 消息显示区域 -->
         <div id="messageArea"></div>
 
-        <!-- 操作按钮区域 -->
-        <section class="section">
-            <h2>🔧 管理操作</h2>
-            <div style="display: flex; gap: 20px; justify-content: center; align-items: center;">
-                <button type="button" class="btn" onclick="refreshDocuments()">
-                    🔄 刷新列表
-                </button>
-                <button type="button" class="btn" onclick="showUploadModal()">
-                    📤 上传文档
-                </button>
-                <button type="button" class="btn" onclick="goToSearch()">
-                    🔍 检索查询
-                </button>
-            </div>
-        </section>
-
         <!-- 文档列表区域 -->
         <section class="section">
-            <h2>📚 文档列表</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #667eea; padding-bottom: 10px; margin-bottom: 20px;">
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <h2 style="margin: 0; border: none; padding: 0;">📚 文档列表</h2>
+                    <div id="systemStats">
+                        <!-- 统计信息将在这里动态生成 -->
+                    </div>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="button" class="btn btn-small" onclick="refreshDocuments()">
+                        🔄 刷新列表
+                    </button>
+                    <button type="button" class="btn btn-small" onclick="showUploadModal()">
+                        📤 上传文档
+                    </button>
+                    <button type="button" class="btn btn-small" onclick="goToSearch()">
+                        🔍 搜索
+                    </button>
+                </div>
+            </div>
             <div class="loading" id="listLoading">
                 <div class="spinner"></div>
                 <p>正在加载文档列表...</p>
@@ -601,19 +603,20 @@
         async function loadDocuments() {
             const container = document.getElementById('documentsContainer');
             const loading = document.getElementById('listLoading');
+            const statsContainer = document.getElementById('systemStats');
 
             loading.classList.add('show');
             container.innerHTML = '';
+            statsContainer.innerHTML = '';
 
             try {
                 const response = await fetch('/api/v1/documents');
-                const documents = await response.json();
+                const result = await response.json();
 
                 if (response.ok) {
-                    displayDocuments(documents);
+                    displayDocuments(result);
                 } else {
-                    const errorResult = documents;
-                    showMessage(errorResult.detail || '获取文档列表失败', 'error');
+                    showMessage(result.detail || '获取文档列表失败', 'error');
                 }
             } catch (error) {
                 console.error('加载文档列表错误:', error);
@@ -624,10 +627,22 @@
         }
 
         // 显示文档列表
-        function displayDocuments(documentsData) {
+        function displayDocuments(data) {
             const container = document.getElementById('documentsContainer');
+            const statsContainer = document.getElementById('systemStats');
+            const documents = data.documents;
+            const stats = data.system_stats;
 
-            if (!documentsData || documentsData.length === 0) {
+            // 更新统计信息
+            if (stats) {
+                statsContainer.innerHTML = `
+                    <span style="font-size: 0.9em; color: #555;">
+                        [总文档数：${stats.total_documents || 0} | 总分片数：${stats.total_chunks || 0}]
+                    </span>
+                `;
+            }
+
+            if (!documents || documents.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
                         <div class="empty-state-icon">📄</div>
@@ -655,7 +670,7 @@
                     <tbody>
             `;
 
-            documentsData.forEach(doc => {
+            documents.forEach(doc => {
                 const fileName = doc.document_path.split('/').pop() || doc.document_path;
                 const createdAt = formatDateTime(doc.created_at);
                 const fileSize = formatFileSize(doc.file_size || 0);
@@ -663,10 +678,10 @@
                 tableHTML += `
                     <tr>
                         <td><strong>${fileName}</strong></td>
-                        <td>${doc.text_length}</td>
+                        <td>${doc.text_length || 'N/A'}</td>
                         <td>${fileSize}</td>
                         <td><span class="chunk-count">${doc.chunk_count}</span></td>
-                        <td>${doc.chunk_size}</td>
+                        <td>${doc.chunk_size || 'N/A'}</td>
                         <td>${createdAt}</td>
                         <td>
                             <button type="button" class="btn btn-danger btn-small"

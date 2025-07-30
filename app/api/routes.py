@@ -546,55 +546,15 @@ async def health_check(
 
 
 @router.get(
-    "/stats",
-    response_model=StatsResponse,
-    status_code=status.HTTP_200_OK,
-    summary="系统统计",
-    description="获取系统运行统计信息，不包含任何业务层面数据"
-)
-async def get_stats(
-    document_service: DocumentService = Depends(get_document_service)
-) -> StatsResponse:
-    """
-    系统统计接口
-
-    获取系统运行统计信息，例如文档总数、分片总数等。
-
-    Returns:
-        StatsResponse: 包含系统统计信息。
-    """
-    try:
-        logger.info("获取系统统计信息")
-
-        # 获取统计信息
-        stats = document_service.get_system_stats()
-
-        response = StatsResponse(
-            system_stats=stats,
-            documents=[]  # 确保为空列表以符合模型，或者修改模型
-        )
-
-        logger.info("系统统计信息获取完成")
-        return response
-
-    except Exception as e:
-        logger.error(f"获取统计信息失败: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="获取统计信息失败，请稍后重试"
-        )
-
-
-@router.get(
     "/documents",
-    response_model=list[DocumentInfo],
+    response_model=StatsResponse,
     status_code=status.HTTP_200_OK,
     summary="获取所有文档信息",
     description="返回已处理的所有文档的列表及其详细信息"
 )
 async def get_documents(
     document_service: DocumentService = Depends(get_document_service)
-) -> list[DocumentInfo]:
+) -> StatsResponse:
     """
     获取所有文档信息接口
 
@@ -605,10 +565,18 @@ async def get_documents(
     """
     try:
         logger.info("获取所有文档信息")
+                # 获取统计信息
+        stats = document_service.get_system_stats()
         documents = document_service.list_documents_with_stats()
         document_info_list = [DocumentInfo(**doc) for doc in documents]
         logger.info(f"成功获取 {len(document_info_list)} 篇文档的信息")
-        return document_info_list
+
+        response = StatsResponse(
+            system_stats=stats,
+            documents=document_info_list
+        )
+
+        return response
     except Exception as e:
         logger.error(f"获取文档列表失败: {str(e)}", exc_info=True)
         raise HTTPException(

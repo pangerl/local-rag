@@ -230,6 +230,8 @@ cp .env.template .env
 
 本系统内置了一个基于 Web 的管理界面，方便用户进行文档管理和检索测试。
 
+![管理页面](docs/img/admin.png "页面示例")
+
 - **管理页面**: [http://localhost:8000/admin](http://localhost:8000/admin)
 - **检索页面**: [http://localhost:8000/admin/search](http://localhost:8000/admin/search)
 
