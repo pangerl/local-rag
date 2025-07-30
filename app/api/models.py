@@ -490,6 +490,97 @@ class HealthResponse(BaseModel):
     )
 
 
+class DeleteDocumentRequest(BaseModel):
+    """
+    文档删除请求模型
+    
+    用于删除文档接口的请求参数验证
+    """
+    
+    document_path: str = Field(
+        ...,
+        description="要删除的文档文件路径",
+        example="documents/example.txt",
+        min_length=1,
+        max_length=500
+    )
+    
+    @field_validator('document_path')
+    @classmethod
+    def validate_document_path(cls, v):
+        """验证文档路径格式"""
+        if not v or not v.strip():
+            raise ValueError('document_path 不能为空')
+        return v.strip()
+    
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "document_path": "documents/python_tutorial.txt"
+            }
+        }
+    )
+
+
+class DeleteDocumentResponse(BaseModel):
+    """
+    文档删除响应模型
+    
+    返回文档删除结果和统计信息
+    """
+    
+    success: bool = Field(
+        ...,
+        description="删除是否成功"
+    )
+    
+    message: str = Field(
+        ...,
+        description="删除结果消息"
+    )
+    
+    document_path: str = Field(
+        ...,
+        description="删除的文档路径"
+    )
+    
+    chunks_deleted: int = Field(
+        ...,
+        description="删除的文档分片数量",
+        ge=0
+    )
+    
+    processing_time: float = Field(
+        ...,
+        description="删除耗时（秒）",
+        ge=0
+    )
+    
+    status: str = Field(
+        ...,
+        description="删除状态：success, not_found, error"
+    )
+    
+    timestamp: datetime = Field(
+        default_factory=datetime.now,
+        description="删除完成时间"
+    )
+    
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "success": True,
+                "message": "文档删除成功",
+                "document_path": "documents/python_tutorial.txt",
+                "chunks_deleted": 15,
+                "processing_time": 0.25,
+                "status": "success",
+                "timestamp": "2024-01-01T12:00:00"
+            }
+        }
+    )
+
+
 class StatsResponse(BaseModel):
     """
     统计信息响应模型

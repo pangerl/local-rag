@@ -339,6 +339,11 @@ class DocumentService:
                 "storage_total_chunks": storage_stats.get("total_chunks", 0),
                 "average_chunks_per_document": storage_stats.get("average_chunks_per_document", 0)
             })
+            
+            # 添加详细的文档列表信息
+            documents_info = self.vector_store.list_stored_documents()
+            stats["documents"] = documents_info.get("documents", [])
+            
         except Exception as e:
             logger.warning(f"获取存储统计信息失败: {str(e)}")
 

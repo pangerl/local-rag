@@ -19,7 +19,7 @@ from app.core.config import Settings
 from app.core.logging_config import setup_logging
 from app.core.exceptions import LocalRAGException, ModelLoadError, DatabaseError
 from app.core.monitoring import system_monitor
-from app.api.routes import router, init_services
+from app.api.routes import router, admin_router, init_services
 from app.api.monitoring import monitoring_router
 from app.api.models import ErrorResponse
 from app.middleware.exception_handler import exception_handler
@@ -198,7 +198,7 @@ async def startup_check_middleware(request: Request, call_next):
     if hasattr(request, "scope") and request.scope.get("client") == ("testclient", 50000):
         return await call_next(request)
 
-    if not _startup_complete and request.url.path not in ["/", "/health"]:
+    if not _startup_complete and request.url.path not in ["/", "/health", "/admin"]:
         return JSONResponse(
             status_code=503,
             content={
@@ -220,6 +220,7 @@ app.add_exception_handler(Exception, exception_handler.handle_general_exception)
 
 # 注册路由
 app.include_router(router)
+app.include_router(admin_router)
 app.include_router(monitoring_router)
 
 
@@ -232,8 +233,10 @@ async def root():
         "description": "本地运行的检索增强生成知识库系统",
         "status": "running" if _startup_complete else "starting",
         "docs_url": "/docs",
+        "admin_page": "/admin",
         "health_check": "/api/v1/health",
         "endpoints": {
+            "admin": "/admin",
             "ingest": "/api/v1/ingest",
             "retrieve": "/api/v1/retrieve",
             "health": "/api/v1/health",

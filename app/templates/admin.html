@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local RAG - 文档管理</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px 0;
+            margin-bottom: 30px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        header h1 {
+            font-size: 2.5em;
+            font-weight: 300;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .section {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+            font-weight: 500;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        /* 上传区域样式 */
+        .upload-area {
+            border: 2px dashed #667eea;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            background: #f8f9ff;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .upload-area:hover {
+            border-color: #764ba2;
+            background: #f0f2ff;
+        }
+
+        .upload-area.dragover {
+            border-color: #764ba2;
+            background: #e8ebff;
+            transform: scale(1.02);
+        }
+
+        .upload-icon {
+            font-size: 3em;
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+
+        .upload-text {
+            font-size: 1.2em;
+            color: #666;
+            margin-bottom: 20px;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
+        }
+
+        .btn-danger:hover {
+            box-shadow: 0 4px 12px rgba(255, 107, 107, 0.4);
+        }
+
+        .btn-small {
+            padding: 8px 16px;
+            font-size: 0.9em;
+        }
+
+        /* 配置选项样式 */
+        .config-options {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group label {
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #555;
+        }
+
+        .form-group input {
+            padding: 10px;
+            border: 2px solid #e1e5e9;
+            border-radius: 6px;
+            font-size: 1em;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        /* 文档列表样式 */
+        .documents-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .documents-table th,
+        .documents-table td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #e1e5e9;
+        }
+
+        .documents-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #555;
+            position: sticky;
+            top: 0;
+        }
+
+        .documents-table tr:hover {
+            background: #f8f9ff;
+        }
+
+        .document-path {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            background: #f1f3f4;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+
+        .chunk-count {
+            background: #667eea;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: 500;
+        }
+
+        /* 状态消息样式 */
+        .message {
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        /* 加载状态样式 */
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+
+        .empty-state-icon {
+            font-size: 4em;
+            color: #ccc;
+            margin-bottom: 20px;
+        }
+
+        /* 确认对话框样式 */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+
+        .modal.show {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-content h3 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .modal-content p {
+            margin-bottom: 25px;
+            color: #666;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+
+            .config-options {
+                grid-template-columns: 1fr;
+            }
+
+            .documents-table {
+                font-size: 0.9em;
+            }
+
+            .documents-table th,
+            .documents-table td {
+                padding: 10px 8px;
+            }
+
+            header h1 {
+                font-size: 2em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Local RAG 文档管理</h1>
+            <p>管理您的知识库文档，支持上传、查看和删除操作</p>
+        </header>
+
+        <!-- 消息显示区域 -->
+        <div id="messageArea"></div>
+
+        <!-- 操作按钮区域 -->
+        <section class="section">
+            <h2>🔧 管理操作</h2>
+            <div style="display: flex; gap: 20px; justify-content: center; align-items: center;">
+                <button type="button" class="btn" onclick="refreshDocuments()">
+                    🔄 刷新列表
+                </button>
+                <button type="button" class="btn" onclick="showUploadModal()">
+                    📤 上传文档
+                </button>
+                <button type="button" class="btn" onclick="goToSearch()">
+                    🔍 检索查询
+                </button>
+            </div>
+        </section>
+
+        <!-- 文档列表区域 -->
+        <section class="section">
+            <h2>📚 文档列表</h2>
+            <div class="loading" id="listLoading">
+                <div class="spinner"></div>
+                <p>正在加载文档列表...</p>
+            </div>
+            <div id="documentsContainer">
+                <!-- 文档列表将在这里动态生成 -->
+            </div>
+        </section>
+    </div>
+
+    <!-- 确认删除对话框 -->
+    <div class="modal" id="deleteModal">
+        <div class="modal-content">
+            <h3>确认删除</h3>
+            <p id="deleteMessage">确定要删除这个文档吗？此操作不可撤销。</p>
+            <div class="modal-buttons">
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">确认删除</button>
+                <button type="button" class="btn" onclick="closeDeleteModal()">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 上传文档对话框 -->
+    <div class="modal" id="uploadModal">
+        <div class="modal-content" style="max-width: 600px;">
+            <h3>上传文档</h3>
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-icon">📁</div>
+                <div class="upload-text">
+                    <strong>点击选择文件或拖拽文件到此处</strong><br>
+                    支持格式：.txt, .md, .pdf, .docx, .doc, .html, .xml, .eml, .msg
+                </div>
+                <input type="file" id="fileInput" class="file-input" accept=".txt,.md,.pdf,.docx,.doc,.html,.xml,.eml,.msg">
+                <button type="button" class="btn" onclick="document.getElementById('fileInput').click()">
+                    选择文件
+                </button>
+            </div>
+
+            <div class="config-options">
+                <div class="form-group">
+                    <label for="chunkSize">分片大小 (tokens)</label>
+                    <input type="number" id="chunkSize" value="300" min="50" max="2000">
+                </div>
+                <div class="form-group">
+                    <label for="chunkOverlap">分片重叠 (tokens)</label>
+                    <input type="number" id="chunkOverlap" value="50" min="0" max="500">
+                </div>
+            </div>
+
+            <div class="loading" id="uploadLoading">
+                <div class="spinner"></div>
+                <p>正在处理文档，请稍候...</p>
+            </div>
+
+            <div class="modal-buttons">
+                <button type="button" class="btn" id="uploadBtn" onclick="uploadFile()" disabled>
+                    开始上传
+                </button>
+                <button type="button" class="btn" onclick="closeUploadModal()">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let selectedFile = null;
+        let documentToDelete = null;
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDocuments();
+            setupEventListeners();
+        });
+
+        // 刷新文档列表
+        function refreshDocuments() {
+            showMessage('正在刷新文档列表...', 'info');
+            loadDocuments();
+        }
+
+        // 显示上传模态框
+        function showUploadModal() {
+            document.getElementById('uploadModal').classList.add('show');
+            resetUploadForm();
+        }
+
+        // 关闭上传模态框
+        function closeUploadModal() {
+            document.getElementById('uploadModal').classList.remove('show');
+            resetUploadForm();
+        }
+
+        // 跳转到检索页面
+        function goToSearch() {
+            window.location.href = '/admin/search';
+        }
+
+        // 设置事件监听器
+        function setupEventListeners() {
+            const uploadArea = document.getElementById('uploadArea');
+            const fileInput = document.getElementById('fileInput');
+
+            // 文件选择事件
+            fileInput.addEventListener('change', function(e) {
+                handleFileSelect(e.target.files[0]);
+            });
+
+            // 拖拽事件
+            uploadArea.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                uploadArea.classList.add('dragover');
+            });
+
+            uploadArea.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+            });
+
+            uploadArea.addEventListener('drop', function(e) {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    handleFileSelect(files[0]);
+                }
+            });
+
+            // 分片配置验证
+            document.getElementById('chunkOverlap').addEventListener('input', function() {
+                const chunkSize = parseInt(document.getElementById('chunkSize').value);
+                const chunkOverlap = parseInt(this.value);
+                if (chunkOverlap >= chunkSize) {
+                    this.value = Math.max(0, chunkSize - 1);
+                    showMessage('分片重叠必须小于分片大小', 'error');
+                }
+            });
+        }
+
+        // 处理文件选择
+        function handleFileSelect(file) {
+            if (!file) return;
+
+            // 验证文件格式
+            const allowedExtensions = ['.txt', '.md', '.pdf', '.docx', '.doc', '.html', '.xml', '.eml', '.msg'];
+            const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+            
+            if (!allowedExtensions.includes(fileExtension)) {
+                showMessage('不支持的文件格式，仅支持：' + allowedExtensions.join(', '), 'error');
+                return;
+            }
+
+            selectedFile = file;
+            document.getElementById('uploadBtn').disabled = false;
+            
+            // 更新上传区域显示
+            const uploadText = document.querySelector('.upload-text');
+            uploadText.innerHTML = `
+                <strong>已选择文件：${file.name}</strong><br>
+                文件大小：${formatFileSize(file.size)}<br>
+                <small>点击"开始上传"按钮进行处理</small>
+            `;
+        }
+
+        // 上传文件
+        async function uploadFile() {
+            if (!selectedFile) {
+                showMessage('请先选择文件', 'error');
+                return;
+            }
+
+            const chunkSize = parseInt(document.getElementById('chunkSize').value);
+            const chunkOverlap = parseInt(document.getElementById('chunkOverlap').value);
+
+            // 验证参数
+            if (chunkOverlap >= chunkSize) {
+                showMessage('分片重叠必须小于分片大小', 'error');
+                return;
+            }
+
+            // 显示加载状态
+            document.getElementById('uploadLoading').classList.add('show');
+            document.getElementById('uploadBtn').disabled = true;
+
+            try {
+                // 创建FormData对象
+                const formData = new FormData();
+                formData.append('file', selectedFile);
+                formData.append('chunk_size', chunkSize);
+                formData.append('chunk_overlap', chunkOverlap);
+
+                // 发送上传请求
+                const response = await fetch('/api/v1/ingest/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    showMessage(`文档上传成功！创建了 ${result.chunks_created} 个分片，耗时 ${result.processing_time.toFixed(2)} 秒`, 'success');
+                    closeUploadModal();
+                    loadDocuments(); // 刷新文档列表
+                } else {
+                    showMessage(result.message || '上传失败', 'error');
+                }
+            } catch (error) {
+                console.error('上传错误:', error);
+                showMessage('上传过程中发生错误：' + error.message, 'error');
+            } finally {
+                document.getElementById('uploadLoading').classList.remove('show');
+                document.getElementById('uploadBtn').disabled = false;
+            }
+        }
+
+        // 重置上传表单
+        function resetUploadForm() {
+            selectedFile = null;
+            document.getElementById('fileInput').value = '';
+            document.getElementById('uploadBtn').disabled = true;
+            document.querySelector('.upload-text').innerHTML = `
+                <strong>点击选择文件或拖拽文件到此处</strong><br>
+                支持格式：.txt, .md, .pdf, .docx, .doc, .html, .xml, .eml, .msg
+            `;
+        }
+
+        // 加载文档列表
+        async function loadDocuments() {
+            const container = document.getElementById('documentsContainer');
+            const loading = document.getElementById('listLoading');
+            
+            loading.classList.add('show');
+            container.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/v1/stats');
+                const result = await response.json();
+
+                if (response.ok) {
+                    displayDocuments(result);
+                } else {
+                    showMessage('获取文档列表失败', 'error');
+                }
+            } catch (error) {
+                console.error('加载文档列表错误:', error);
+                showMessage('加载文档列表时发生错误：' + error.message, 'error');
+            } finally {
+                loading.classList.remove('show');
+            }
+        }
+
+        // 显示文档列表
+        function displayDocuments(statsData) {
+            const container = document.getElementById('documentsContainer');
+            
+            // 从统计数据中提取文档信息
+            const processingStats = statsData.processing_stats || {};
+            const storageStats = statsData.storage_stats || {};
+            
+            // 如果没有文档，显示空状态
+            if (!storageStats.total_documents || storageStats.total_documents === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📄</div>
+                        <h3>暂无文档</h3>
+                        <p>请使用上方的上传功能添加文档到知识库</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // 创建文档列表表格
+            let tableHTML = `
+                <table class="documents-table">
+                    <thead>
+                        <tr>
+                            <th>文档名称</th>
+                            <th>文档路径</th>
+                            <th>分片数量</th>
+                            <th>创建时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            // 检查是否有详细的文档列表数据
+            // 从向量存储服务的list_stored_documents方法获取的数据应该在processing_stats中
+            const documentsData = processingStats.documents || [];
+            
+            if (documentsData.length > 0) {
+                // 显示具体的文档列表
+                documentsData.forEach(doc => {
+                    const fileName = doc.document_path.split('/').pop() || doc.document_path;
+                    const createdAt = formatDateTime(doc.created_at);
+                    
+                    tableHTML += `
+                        <tr>
+                            <td><strong>${fileName}</strong></td>
+                            <td><code class="document-path">${doc.document_path}</code></td>
+                            <td><span class="chunk-count">${doc.chunk_count}</span></td>
+                            <td>${createdAt}</td>
+                            <td>
+                                <button type="button" class="btn btn-danger btn-small" 
+                                        onclick="deleteDocument('${doc.document_path.replace(/'/g, '\\\'').replace(/"/g, '&quot;')}', '${fileName.replace(/'/g, '\\\'').replace(/"/g, '&quot;')}')">
+                                    删除
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            } else {
+                // 如果没有详细列表，显示汇总信息
+                tableHTML += `
+                    <tr>
+                        <td colspan="5" style="text-align: center; padding: 40px; color: #666;">
+                            <div>
+                                <h4>系统统计信息</h4>
+                                <p>总文档数：${storageStats.total_documents}</p>
+                                <p>总分片数：${storageStats.total_chunks}</p>
+                                <p>平均每文档分片数：${Math.round((storageStats.average_chunks_per_document || 0) * 100) / 100}</p>
+                                <br>
+                                <small>注：正在加载详细文档列表...</small>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }
+
+            tableHTML += `
+                    </tbody>
+                </table>
+            `;
+
+            container.innerHTML = tableHTML;
+        }
+
+        // 删除文档
+        function deleteDocument(documentPath, documentName) {
+            documentToDelete = { path: documentPath, name: documentName };
+            document.getElementById('deleteMessage').textContent = 
+                `确定要删除文档"${documentName}"吗？此操作将删除该文档的所有分片数据，且不可撤销。`;
+            document.getElementById('deleteModal').classList.add('show');
+        }
+
+        // 确认删除
+        document.getElementById('confirmDeleteBtn').addEventListener('click', async function() {
+            if (!documentToDelete) return;
+
+            // 禁用删除按钮，防止重复点击
+            const deleteBtn = document.getElementById('confirmDeleteBtn');
+            deleteBtn.disabled = true;
+            deleteBtn.textContent = '删除中...';
+
+            try {
+                const response = await fetch(`/api/v1/documents/${encodeURIComponent(documentToDelete.path)}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    // 处理HTTP错误状态
+                    if (response.status === 404) {
+                        showMessage(`文档"${documentToDelete.name}"不存在，可能已被删除`, 'error');
+                    } else if (response.status === 500) {
+                        showMessage('服务器内部错误，请稍后重试', 'error');
+                    } else {
+                        showMessage(`删除失败，HTTP状态码: ${response.status}`, 'error');
+                    }
+                    loadDocuments(); // 刷新列表以同步状态
+                    return;
+                }
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showMessage(`文档"${documentToDelete.name}"删除成功，已删除 ${result.chunks_deleted} 个分片`, 'success');
+                    loadDocuments(); // 刷新列表
+                } else {
+                    showMessage(result.message || '删除失败', 'error');
+                }
+            } catch (error) {
+                console.error('删除错误:', error);
+                if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                    showMessage('网络连接错误，请检查网络连接', 'error');
+                } else {
+                    showMessage('删除过程中发生错误：' + error.message, 'error');
+                }
+            } finally {
+                // 恢复删除按钮状态
+                deleteBtn.disabled = false;
+                deleteBtn.textContent = '确认删除';
+                closeDeleteModal();
+            }
+        });
+
+        // 关闭删除对话框
+        function closeDeleteModal() {
+            document.getElementById('deleteModal').classList.remove('show');
+            documentToDelete = null;
+        }
+
+        // 添加键盘事件监听
+        document.addEventListener('keydown', function(e) {
+            // ESC键关闭对话框
+            if (e.key === 'Escape') {
+                const deleteModal = document.getElementById('deleteModal');
+                const uploadModal = document.getElementById('uploadModal');
+                
+                if (deleteModal.classList.contains('show')) {
+                    closeDeleteModal();
+                } else if (uploadModal.classList.contains('show')) {
+                    closeUploadModal();
+                }
+            }
+        });
+
+        // 点击模态框背景关闭对话框
+        document.getElementById('deleteModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeDeleteModal();
+            }
+        });
+
+        document.getElementById('uploadModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeUploadModal();
+            }
+        });
+
+        // 显示消息
+        function showMessage(message, type = 'info') {
+            const messageArea = document.getElementById('messageArea');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.textContent = message;
+            
+            messageArea.appendChild(messageDiv);
+            
+            // 3秒后自动移除消息
+            setTimeout(() => {
+                if (messageDiv.parentNode) {
+                    messageDiv.parentNode.removeChild(messageDiv);
+                }
+            }, 5000);
+        }
+
+        // 格式化文件大小
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // 格式化时间
+        function formatDateTime(dateString) {
+            if (!dateString) return '未知';
+            const date = new Date(dateString);
+            return date.toLocaleString('zh-CN');
+        }
+    </script>
+</body>
+</html>

@@ -31,4 +31,5 @@ dependencies = [
     "langchain-chroma>=0.2.5",
     "langchain-huggingface>=0.3.1",
     "langchain-community>=0.3.27",
+    "jinja2>=3.1.6",
 ]

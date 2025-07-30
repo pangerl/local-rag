@@ -11,5 +11,8 @@ wheels/
 models/
 .DS_Store
 .idea/
+.kiro/
+.vscode/
 data/
 logs/
+

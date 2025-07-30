@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local RAG - 检索查询</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px 0;
+            margin-bottom: 30px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        header h1 {
+            font-size: 2.5em;
+            font-weight: 300;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .section {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+            font-weight: 500;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%);
+        }
+
+        .btn-secondary:hover {
+            box-shadow: 0 4px 12px rgba(108, 117, 125, 0.4);
+        }
+
+        /* 搜索区域样式 */
+        .search-area {
+            margin-bottom: 30px;
+        }
+
+        .search-input-group {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #e1e5e9;
+            border-radius: 8px;
+            font-size: 1.1em;
+            transition: border-color 0.3s ease;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .search-btn {
+            padding: 15px 30px;
+            font-size: 1.1em;
+            white-space: nowrap;
+        }
+
+        /* 搜索配置选项 */
+        .search-config {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group label {
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #555;
+        }
+
+        .form-group input, .form-group select {
+            padding: 10px;
+            border: 2px solid #e1e5e9;
+            border-radius: 6px;
+            font-size: 1em;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        /* 结果区域样式 */
+        .results-area {
+            margin-top: 30px;
+        }
+
+        .result-item {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: all 0.3s ease;
+        }
+
+        .result-item:hover {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            border-color: #667eea;
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .result-score {
+            background: #667eea;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: 500;
+        }
+
+        .result-text {
+            font-size: 1.1em;
+            line-height: 1.6;
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .result-metadata {
+            font-size: 0.9em;
+            color: #666;
+            border-top: 1px solid #e9ecef;
+            padding-top: 10px;
+        }
+
+        .metadata-item {
+            display: inline-block;
+            margin-right: 20px;
+            margin-bottom: 5px;
+        }
+
+        .metadata-label {
+            font-weight: 500;
+            color: #555;
+        }
+
+        /* 加载状态样式 */
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* 状态消息样式 */
+        .message {
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        /* 空状态样式 */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+
+        .empty-state-icon {
+            font-size: 4em;
+            color: #ccc;
+            margin-bottom: 20px;
+        }
+
+        /* 导航区域 */
+        .nav-area {
+            margin-bottom: 20px;
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+
+            .search-input-group {
+                flex-direction: column;
+            }
+
+            .search-config {
+                grid-template-columns: 1fr;
+            }
+
+            header h1 {
+                font-size: 2em;
+            }
+
+            .result-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Local RAG 检索查询</h1>
+            <p>在知识库中搜索相关信息，获取精准的检索结果</p>
+        </header>
+
+        <!-- 消息显示区域 -->
+        <div id="messageArea"></div>
+
+        <!-- 导航区域 -->
+        <div class="nav-area">
+            <button type="button" class="btn btn-secondary" onclick="goBack()">
+                ← 返回管理页面
+            </button>
+        </div>
+
+        <!-- 搜索区域 -->
+        <section class="section">
+            <h2>🔍 搜索查询</h2>
+            <div class="search-area">
+                <div class="search-input-group">
+                    <input type="text" 
+                           id="searchInput" 
+                           class="search-input" 
+                           placeholder="请输入您要搜索的内容..."
+                           onkeypress="handleSearchKeyPress(event)">
+                    <button type="button" class="btn search-btn" onclick="performSearch()">
+                        搜索
+                    </button>
+                </div>
+
+                <!-- 搜索配置选项 -->
+                <div class="search-config">
+                    <div class="form-group">
+                        <label for="retrievalK">检索数量 (retrieval_k)</label>
+                        <input type="number" id="retrievalK" value="20" min="1" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label for="topK">返回数量 (top_k)</label>
+                        <input type="number" id="topK" value="5" min="1" max="50">
+                    </div>
+                    <div class="form-group">
+                        <label for="useReranker">使用重排序</label>
+                        <select id="useReranker">
+                            <option value="true">是</option>
+                            <option value="false">否</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 加载状态 -->
+            <div class="loading" id="searchLoading">
+                <div class="spinner"></div>
+                <p>正在搜索中，请稍候...</p>
+            </div>
+        </section>
+
+        <!-- 搜索结果区域 -->
+        <section class="section" id="resultsSection" style="display: none;">
+            <h2>📋 搜索结果</h2>
+            <div id="searchResults">
+                <!-- 搜索结果将在这里动态生成 -->
+            </div>
+        </section>
+    </div>
+
+    <script>
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 聚焦到搜索输入框
+            document.getElementById('searchInput').focus();
+        });
+
+        // 返回管理页面
+        function goBack() {
+            window.location.href = '/admin';
+        }
+
+        // 处理搜索输入框的回车键
+        function handleSearchKeyPress(event) {
+            if (event.key === 'Enter') {
+                performSearch();
+            }
+        }
+
+        // 执行搜索
+        async function performSearch() {
+            const query = document.getElementById('searchInput').value.trim();
+            
+            if (!query) {
+                showMessage('请输入搜索内容', 'error');
+                return;
+            }
+
+            const retrievalK = parseInt(document.getElementById('retrievalK').value);
+            const topK = parseInt(document.getElementById('topK').value);
+            const useReranker = document.getElementById('useReranker').value === 'true';
+
+            // 验证参数
+            if (topK > retrievalK) {
+                showMessage('返回数量不能大于检索数量', 'error');
+                return;
+            }
+
+            // 显示加载状态
+            document.getElementById('searchLoading').classList.add('show');
+            document.getElementById('resultsSection').style.display = 'none';
+
+            try {
+                // 构建请求数据
+                const requestData = {
+                    query: query,
+                    retrieval_k: retrievalK,
+                    top_k: topK,
+                    use_reranker: useReranker
+                };
+
+                // 发送搜索请求
+                const response = await fetch('/api/v1/retrieve', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    displaySearchResults(result);
+                    showMessage(`搜索完成！找到 ${result.returned_count} 个相关结果，耗时 ${result.timing.total_time.toFixed(3)} 秒`, 'success');
+                } else {
+                    showMessage(result.message || '搜索失败', 'error');
+                }
+
+            } catch (error) {
+                console.error('搜索错误:', error);
+                showMessage('搜索过程中发生错误：' + error.message, 'error');
+            } finally {
+                document.getElementById('searchLoading').classList.remove('show');
+            }
+        }
+
+        // 显示搜索结果
+        function displaySearchResults(searchData) {
+            const resultsContainer = document.getElementById('searchResults');
+            const resultsSection = document.getElementById('resultsSection');
+            
+            if (!searchData.results || searchData.results.length === 0) {
+                resultsContainer.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🔍</div>
+                        <h3>未找到相关结果</h3>
+                        <p>请尝试使用不同的关键词或调整搜索参数</p>
+                    </div>
+                `;
+                resultsSection.style.display = 'block';
+                return;
+            }
+
+            let resultsHTML = '';
+            
+            searchData.results.forEach((result, index) => {
+                const similarityScore = (result.similarity_score * 100).toFixed(1);
+                const rerankScore = result.rerank_score ? (result.rerank_score * 100).toFixed(1) : null;
+                
+                resultsHTML += `
+                    <div class="result-item">
+                        <div class="result-header">
+                            <h4>结果 ${index + 1}</h4>
+                            <div>
+                                <span class="result-score">相似度: ${similarityScore}%</span>
+                                ${rerankScore ? `<span class="result-score" style="margin-left: 10px;">重排序: ${rerankScore}%</span>` : ''}
+                            </div>
+                        </div>
+                        <div class="result-text">
+                            ${escapeHtml(result.text)}
+                        </div>
+                        <div class="result-metadata">
+                            <div class="metadata-item">
+                                <span class="metadata-label">文档:</span> ${escapeHtml(result.metadata.source || '未知')}
+                            </div>
+                            <div class="metadata-item">
+                                <span class="metadata-label">分片索引:</span> ${result.metadata.chunk_index || 0}
+                            </div>
+                            <div class="metadata-item">
+                                <span class="metadata-label">ID:</span> ${escapeHtml(result.id)}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            resultsContainer.innerHTML = resultsHTML;
+            resultsSection.style.display = 'block';
+            
+            // 滚动到结果区域
+            resultsSection.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // 显示消息
+        function showMessage(message, type = 'info') {
+            const messageArea = document.getElementById('messageArea');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.textContent = message;
+            
+            messageArea.appendChild(messageDiv);
+            
+            // 5秒后自动移除消息
+            setTimeout(() => {
+                if (messageDiv.parentNode) {
+                    messageDiv.parentNode.removeChild(messageDiv);
+                }
+            }, 5000);
+        }
+
+        // HTML转义函数
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

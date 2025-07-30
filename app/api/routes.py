@@ -4,15 +4,22 @@ API 路由模块
 """
 
 import logging
-from typing import Dict, Any
-from fastapi import APIRouter, HTTPException, status, Depends
+import tempfile
+import os
+from typing import Dict, Any, Optional
+from fastapi import APIRouter, HTTPException, status, Depends, Request, UploadFile, File, Form
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 from datetime import datetime
+from pathlib import Path
 
 from app.api.models import (
     IngestRequest,
     IngestResponse,
     RetrieveRequest,
     RetrieveResponse,
+    DeleteDocumentRequest,
+    DeleteDocumentResponse,
     ErrorResponse,
     HealthResponse,
     StatsResponse,
@@ -33,8 +40,15 @@ from app.core.exceptions import (
 
 logger = logging.getLogger(__name__)
 
+# 配置模板目录
+templates_dir = Path(__file__).parent.parent / "templates"
+templates = Jinja2Templates(directory=str(templates_dir))
+
 # 创建路由器
 router = APIRouter(prefix="/api/v1", tags=["Local RAG API"])
+
+# 创建管理页面路由器（不带前缀）
+admin_router = APIRouter(tags=["Admin Interface"])
 
 # 全局服务实例（将在应用启动时初始化）
 _document_service: DocumentService = None
@@ -187,6 +201,179 @@ async def ingest_document(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="服务器内部错误，请稍后重试"
         )
+
+
+@router.post(
+    "/ingest/upload",
+    response_model=IngestResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="文档上传摄取",
+    description="上传文件并处理文档，将文档分片并存储到向量数据库中",
+    responses={
+        201: {"description": "文档处理成功"},
+        400: {"model": ErrorResponse, "description": "请求参数错误"},
+        413: {"model": ErrorResponse, "description": "文件过大"},
+        422: {"model": ErrorResponse, "description": "参数验证失败"},
+        500: {"model": ErrorResponse, "description": "服务器内部错误"}
+    }
+)
+async def ingest_uploaded_document(
+    file: UploadFile = File(..., description="要上传的文档文件"),
+    chunk_size: Optional[int] = Form(default=None, description="文本分片大小（词元数量）", ge=50, le=2000),
+    chunk_overlap: Optional[int] = Form(default=None, description="相邻分片间的重叠词元数量", ge=0, le=500),
+    document_service: DocumentService = Depends(get_document_service)
+) -> IngestResponse:
+    """
+    文档上传摄取接口
+    
+    处理文件上传和文档向量化，支持以下功能：
+    - 多种文档格式支持（.txt, .md, .pdf, .docx, .doc, .html, .xml, .eml, .msg）
+    - 文件大小验证
+    - 基于词元数量的文本分片
+    - 文档向量化和存储
+    - 完整的错误处理
+    
+    Args:
+        file: 上传的文档文件
+        chunk_size: 文本分片大小（词元数量）
+        chunk_overlap: 相邻分片间的重叠词元数量
+        document_service: 文档处理服务
+        
+    Returns:
+        IngestResponse: 处理结果和统计信息
+        
+    Raises:
+        HTTPException: 各种错误情况的 HTTP 异常
+    """
+    temp_file_path = None
+    
+    try:
+        logger.info(f"开始处理文档上传摄取请求: {file.filename}")
+        
+        # 验证文件名
+        if not file.filename:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="文件名不能为空"
+            )
+        
+        # 验证文件格式
+        allowed_extensions = ['.txt', '.md', '.pdf', '.docx', '.doc', '.html', '.xml', '.eml', '.msg']
+        file_extension = Path(file.filename).suffix.lower()
+        
+        if file_extension not in allowed_extensions:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"不支持的文件格式，仅支持: {', '.join(allowed_extensions)}"
+            )
+        
+        # 验证文件大小（限制为50MB）
+        max_file_size = 50 * 1024 * 1024  # 50MB
+        file_content = await file.read()
+        
+        if len(file_content) > max_file_size:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"文件过大，最大支持 {max_file_size // (1024*1024)}MB"
+            )
+        
+        if len(file_content) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="文件内容为空"
+            )
+        
+        # 验证分片参数
+        if chunk_overlap is not None and chunk_size is not None:
+            if chunk_overlap >= chunk_size:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="chunk_overlap 必须小于 chunk_size"
+                )
+        
+        # 创建临时文件
+        with tempfile.NamedTemporaryFile(
+            delete=False, 
+            suffix=file_extension,
+            prefix=f"upload_{Path(file.filename).stem}_"
+        ) as temp_file:
+            temp_file.write(file_content)
+            temp_file_path = temp_file.name
+        
+        logger.info(f"文件已保存到临时路径: {temp_file_path}")
+        
+        # 处理文档
+        result = document_service.process_document(
+            document_path=temp_file_path,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap
+        )
+        
+        # 构建响应
+        response = IngestResponse(
+            success=True,
+            message="文档上传和处理成功",
+            document_path=file.filename,  # 使用原始文件名而不是临时路径
+            chunks_created=result["chunks_created"],
+            chunks_stored=result["chunks_stored"],
+            text_length=result["text_length"],
+            processing_time=result["processing_time"],
+            chunk_size=result["chunk_size"],
+            chunk_overlap=result["chunk_overlap"],
+            embedding_dimension=result.get("embedding_dimension"),
+            collection_name=result.get("collection_name")
+        )
+        
+        logger.info(f"文档上传摄取完成: {file.filename}, 分片数: {result['chunks_created']}")
+        return response
+        
+    except HTTPException:
+        # 重新抛出 HTTP 异常
+        raise
+        
+    except UnsupportedFormatError as e:
+        logger.error(f"不支持的文件格式: {file.filename}, 错误: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"不支持的文件格式: {str(e)}"
+        )
+        
+    except DocumentProcessError as e:
+        logger.error(f"文档处理错误: {file.filename}, 错误: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"文档处理失败: {str(e)}"
+        )
+        
+    except DatabaseError as e:
+        logger.error(f"数据库错误: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="数据库操作失败，请稍后重试"
+        )
+        
+    except ModelLoadError as e:
+        logger.error(f"模型加载错误: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="模型加载失败，请检查模型配置"
+        )
+        
+    except Exception as e:
+        logger.error(f"文档上传摄取过程中发生未知错误: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="服务器内部错误，请稍后重试"
+        )
+        
+    finally:
+        # 清理临时文件
+        if temp_file_path and os.path.exists(temp_file_path):
+            try:
+                os.unlink(temp_file_path)
+                logger.info(f"临时文件已删除: {temp_file_path}")
+            except Exception as e:
+                logger.warning(f"删除临时文件失败: {temp_file_path}, 错误: {str(e)}")
 
 
 @router.post(
@@ -393,4 +580,184 @@ async def get_stats(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="获取统计信息失败，请稍后重试"
+        )
+
+
+@router.delete(
+    "/documents/{document_path:path}",
+    response_model=DeleteDocumentResponse,
+    status_code=status.HTTP_200_OK,
+    summary="删除文档",
+    description="删除指定的文档及其所有分片数据",
+    responses={
+        200: {"description": "文档删除成功"},
+        404: {"model": ErrorResponse, "description": "文档不存在"},
+        500: {"model": ErrorResponse, "description": "服务器内部错误"}
+    }
+)
+async def delete_document(
+    document_path: str,
+    document_service: DocumentService = Depends(get_document_service)
+) -> DeleteDocumentResponse:
+    """
+    删除文档接口
+    
+    删除指定的文档及其在向量数据库中的所有分片数据，支持以下功能：
+    - 验证文档路径
+    - 删除向量数据库中的分片
+    - 返回删除统计信息
+    - 完整的错误处理
+    
+    Args:
+        document_path: 要删除的文档路径
+        document_service: 文档处理服务
+        
+    Returns:
+        DeleteDocumentResponse: 删除结果和统计信息
+        
+    Raises:
+        HTTPException: 各种错误情况的 HTTP 异常
+    """
+    try:
+        logger.info(f"开始处理文档删除请求: {document_path}")
+        
+        # 删除文档
+        result = document_service.delete_document(document_path)
+        
+        # 构建响应
+        if result["status"] == "not_found":
+            response = DeleteDocumentResponse(
+                success=False,
+                message=f"文档不存在: {document_path}",
+                document_path=document_path,
+                chunks_deleted=0,
+                processing_time=result["processing_time"],
+                status="not_found"
+            )
+            logger.warning(f"文档删除失败，文档不存在: {document_path}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"文档不存在: {document_path}"
+            )
+        else:
+            response = DeleteDocumentResponse(
+                success=True,
+                message="文档删除成功",
+                document_path=result["document_path"],
+                chunks_deleted=result["chunks_deleted"],
+                processing_time=result["processing_time"],
+                status=result["status"]
+            )
+            
+            logger.info(f"文档删除完成: {document_path}, 删除分片数: {result['chunks_deleted']}")
+            return response
+        
+    except HTTPException:
+        # 重新抛出 HTTP 异常
+        raise
+        
+    except FileNotFoundError as e:
+        logger.error(f"文档不存在: {document_path}, 错误: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"文档不存在: {document_path}"
+        )
+        
+    except DocumentProcessError as e:
+        logger.error(f"文档删除错误: {document_path}, 错误: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"文档删除失败: {str(e)}"
+        )
+        
+    except DatabaseError as e:
+        logger.error(f"数据库错误: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="数据库操作失败，请稍后重试"
+        )
+        
+    except Exception as e:
+        logger.error(f"删除文档时发生未知错误: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="服务器内部错误，请稍后重试"
+        )
+
+
+@admin_router.get(
+    "/admin",
+    response_class=HTMLResponse,
+    summary="管理页面",
+    description="显示文档管理界面，支持文档上传、查看和删除操作"
+)
+async def admin_page(request: Request):
+    """
+    管理页面接口
+    
+    返回文档管理的HTML界面，提供以下功能：
+    - 文档列表查看
+    - 文档上传功能
+    - 文档删除功能
+    - 系统状态监控
+    
+    Args:
+        request: FastAPI请求对象
+        
+    Returns:
+        HTMLResponse: 管理页面HTML内容
+    """
+    try:
+        logger.info("访问管理页面")
+        
+        # 渲染管理页面模板
+        return templates.TemplateResponse(
+            "admin.html",
+            {"request": request}
+        )
+        
+    except Exception as e:
+        logger.error(f"渲染管理页面失败: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="管理页面加载失败，请稍后重试"
+        )
+
+
+@admin_router.get(
+    "/admin/search",
+    response_class=HTMLResponse,
+    summary="检索查询页面",
+    description="显示检索查询界面，支持在知识库中搜索相关信息"
+)
+async def admin_search_page(request: Request):
+    """
+    检索查询页面接口
+    
+    返回检索查询的HTML界面，提供以下功能：
+    - 输入查询内容
+    - 配置检索参数
+    - 显示检索结果
+    - 结果详细信息展示
+    
+    Args:
+        request: FastAPI请求对象
+        
+    Returns:
+        HTMLResponse: 检索查询页面HTML内容
+    """
+    try:
+        logger.info("访问检索查询页面")
+        
+        # 渲染检索查询页面模板
+        return templates.TemplateResponse(
+            "search.html",
+            {"request": request}
+        )
+        
+    except Exception as e:
+        logger.error(f"渲染检索查询页面失败: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="检索查询页面加载失败，请稍后重试"
         )
