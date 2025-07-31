@@ -53,7 +53,9 @@ class DocumentProcessor:
 
         try:
             # UnstructuredLoader 会自动处理不同文件的编码
-            loader = UnstructuredLoader(file_path)
+            # 通过 mode="elements" 和 strategy="fast" 明确指定使用快速、非模型的解析策略
+            # 这可以避免下载和加载大型的 torch/transformers 模型
+            loader = UnstructuredLoader(file_path, mode="elements", strategy="fast")
             documents = loader.load()
 
             # UnstructuredLoader 可能会返回多个 Document，
