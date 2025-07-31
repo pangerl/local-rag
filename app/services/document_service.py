@@ -379,7 +379,7 @@ class DocumentService:
         start_time = time.time()
         logger.info(f"开始批量处理目录: {directory_path}")
 
-        supported_extensions = self.document_processor.SUPPORTED_FORMATS.keys()
+        supported_extensions = self.document_processor.SUPPORTED_FORMATS
         files_to_process = [p for p in Path(directory_path).rglob('*') if p.is_file() and p.suffix.lower() in supported_extensions]
 
         total_files = len(files_to_process)

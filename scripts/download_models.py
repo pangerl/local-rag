@@ -19,10 +19,10 @@ def download_model(repo_id: str, local_dir: Path, description: str):
         logger.info(f"开始下载 {description}...")
         logger.info(f"仓库: {repo_id}")
         logger.info(f"目标目录: {local_dir}")
-        
+
         # 创建目录
         local_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # 下载模型
         snapshot_download(
             repo_id=repo_id,
@@ -30,10 +30,10 @@ def download_model(repo_id: str, local_dir: Path, description: str):
             local_dir_use_symlinks=False,
             resume_download=True
         )
-        
+
         logger.info(f"✅ {description} 下载完成")
         return True
-        
+
     except Exception as e:
         logger.error(f"❌ {description} 下载失败: {e}")
         return False
@@ -46,13 +46,13 @@ def verify_model(model_dir: Path, model_name: str):
         "tokenizer.json",
         "tokenizer_config.json"
     ]
-    
+
     missing_files = []
     for file_name in required_files:
         file_path = model_dir / file_name
         if not file_path.exists():
             missing_files.append(file_name)
-    
+
     if missing_files:
         logger.warning(f"⚠️  {model_name} 缺少文件: {missing_files}")
         return False
@@ -63,7 +63,7 @@ def verify_model(model_dir: Path, model_name: str):
 def main():
     """主函数"""
     logger.info("开始下载 Local RAG 系统模型...")
-    
+
     # 模型配置
     models = [
         {
@@ -77,7 +77,7 @@ def main():
             "description": "重排序模型 (bge-reranker-base)"
         }
     ]
-    
+
     # 检查网络连接
     try:
         import requests
@@ -88,20 +88,20 @@ def main():
     except Exception as e:
         logger.error(f"❌ 网络连接检查失败: {e}")
         sys.exit(1)
-    
+
     # 下载模型
     success_count = 0
     for model in models:
         if download_model(model["repo_id"], model["local_dir"], model["description"]):
             if verify_model(model["local_dir"], model["description"]):
                 success_count += 1
-    
+
     # 总结
     logger.info(f"模型下载完成: {success_count}/{len(models)} 成功")
-    
+
     if success_count == len(models):
         logger.info("🎉 所有模型下载成功！系统已准备就绪。")
-        
+
         # 显示模型信息
         logger.info("\n📊 模型信息:")
         for model in models:
