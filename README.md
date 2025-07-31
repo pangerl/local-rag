@@ -179,10 +179,9 @@ cp .env.template .env
 
 | 参数 | 默认值 | 说明 |
 |-------------------------|--------------------------|----------------------------------|
-| `MODEL_BASE_PATH` | `models` | 模型文件基础路径 |
+| `DATA_PATH` | `data` | 数据文件基础路径 |
 | `EMBEDDING_MODEL_DIR` | `bge-small-zh-v1.5` | 嵌入模型目录名 |
 | `RERANKER_MODEL_DIR` | `bge-reranker-base` | 重排序模型目录名 |
-| `CHROMA_DB_PATH` | `data/chroma_db` | ChromaDB 数据库路径 |
 | `COLLECTION_NAME` | `documents` | 文档集合名称 |
 | `DEFAULT_CHUNK_SIZE` | `500` | 默认分片大小（词元数） |
 | `DEFAULT_CHUNK_OVERLAP` | `50` | 默认分片重叠（词元数） |
@@ -204,6 +203,7 @@ cp .env.template .env
 - **文档管理**:
   - `POST /api/v1/ingest`: 从本地路径摄取文档。
   - `POST /api/v1/ingest/upload`: 通过文件上传方式摄取文档。
+  - `POST /api/v1/ingest/load`: 从本地目录批量摄取文档。
   - `POST /api/v1/retrieve`: 根据查询检索文档片段。
   - `GET /api/v1/documents`: 获取所有已处理的文档列表。
   - `DELETE /api/v1/documents/{document_path}`: 删除指定的文档。

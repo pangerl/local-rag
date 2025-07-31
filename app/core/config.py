@@ -6,20 +6,21 @@
 import os
 from pathlib import Path
 from typing import Optional
-from pydantic import Field
+from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
     """系统配置类"""
 
+    # 数据文件基础路径
+    DATA_PATH: str = Field(default="data", description="数据文件基础路径")
+
     # 模型配置
-    MODEL_BASE_PATH: str = Field(default="models", description="模型文件基础路径")
     EMBEDDING_MODEL_DIR: str = Field(default="bge-small-zh-v1.5", description="嵌入模型目录名")
     RERANKER_MODEL_DIR: str = Field(default="bge-reranker-base", description="重排序模型目录名")
 
     # 数据库配置
-    CHROMA_DB_PATH: str = Field(default="data/chroma_db", description="ChromaDB 数据库路径")
     COLLECTION_NAME: str = Field(default="documents", description="文档集合名称")
 
     # 分片配置
@@ -40,7 +41,19 @@ class Settings(BaseSettings):
     API_PORT: int = Field(default=8000, description="API 服务端口")
 
     # 支持的文件格式
-    SUPPORTED_FORMATS: list = Field(default=[".txt", ".md"], description="支持的文档格式")
+    SUPPORTED_FORMATS: list = Field(default=['.txt', '.md', '.pdf', '.docx', '.doc', '.html', '.xml', '.eml', '.msg'], description="支持的文档格式")
+
+    @computed_field
+    @property
+    def MODEL_BASE_PATH(self) -> str:
+        """模型文件基础路径"""
+        return str(Path(self.DATA_PATH) / "models")
+
+    @computed_field
+    @property
+    def CHROMA_DB_PATH(self) -> str:
+        """ChromaDB 数据库路径"""
+        return str(Path(self.DATA_PATH) / "chroma_db")
 
     model_config = {
         "env_file": ".env",

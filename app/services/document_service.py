@@ -364,6 +364,68 @@ class DocumentService:
 
         return stats
 
+    def process_directory(self, directory_path: str, chunk_size: Optional[int] = None, chunk_overlap: Optional[int] = None) -> Dict[str, Any]:
+        """
+        批量处理目录中的所有支持的文档
+
+        Args:
+            directory_path: 包含文档的目录路径
+            chunk_size: 分片大小（词元数量）
+            chunk_overlap: 分片重叠（词元数量）
+
+        Returns:
+            Dict[str, Any]: 批量处理结果
+        """
+        start_time = time.time()
+        logger.info(f"开始批量处理目录: {directory_path}")
+
+        supported_extensions = self.document_processor.SUPPORTED_FORMATS.keys()
+        files_to_process = [p for p in Path(directory_path).rglob('*') if p.is_file() and p.suffix.lower() in supported_extensions]
+
+        total_files = len(files_to_process)
+        processed_files = 0
+        failed_files = 0
+        failed_details = []
+        total_chunks_created = 0
+        total_chunks_stored = 0
+
+        for file_path in files_to_process:
+            try:
+                file_size = file_path.stat().st_size
+                result = self.process_document(
+                    document_path=str(file_path),
+                    original_filename=str(file_path),
+                    file_size=file_size,
+                    chunk_size=chunk_size,
+                    chunk_overlap=chunk_overlap
+                )
+                if result.get("status") == "success":
+                    processed_files += 1
+                    total_chunks_created += result.get("chunks_created", 0)
+                    total_chunks_stored += result.get("chunks_stored", 0)
+                else:
+                    failed_files += 1
+                    failed_details.append({"file": str(file_path), "reason": result.get("message", "Unknown error")})
+
+            except Exception as e:
+                failed_files += 1
+                failed_details.append({"file": str(file_path), "reason": str(e)})
+                logger.error(f"处理文件失败: {file_path}, 错误: {e}")
+
+        total_processing_time = time.time() - start_time
+        logger.info(f"目录处理完成: {directory_path}, 总耗时: {total_processing_time:.2f}s")
+
+        return {
+            "success": failed_files == 0,
+            "total_files": total_files,
+            "processed_files": processed_files,
+            "failed_files": failed_files,
+            "failed_details": failed_details,
+            "total_chunks_created": total_chunks_created,
+            "total_chunks_stored": total_chunks_stored,
+            "total_processing_time": total_processing_time,
+        }
+
     def list_documents_with_stats(self) -> List[Dict[str, Any]]:
         """
         获取包含统计信息的文档列表

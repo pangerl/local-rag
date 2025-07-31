@@ -66,6 +66,24 @@ curl -X POST "http://localhost:8000/api/v1/ingest/upload" \
   -F "chunk_overlap=50"
 ```
 
+### 3. 批量摄取 (基于目录)
+
+**端点**: `POST /api/v1/ingest/load`
+
+此接口用于从服务器的本地目录批量加载和处理文档。
+
+**cURL 示例**:
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/ingest/load" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "my_documents",
+    "chunk_size": 400,
+    "chunk_overlap": 80
+  }'
+```
+
 **Python 客户端示例**:
 
 ```python
@@ -92,7 +110,7 @@ if result:
     print(f"上传成功: {result['message']}")
 ```
 
-### 3. 文档检索
+### 4. 文档检索
 
 **端点**: `POST /api/v1/retrieve`
 
@@ -111,7 +129,7 @@ curl -X POST "http://localhost:8000/api/v1/retrieve" \
   }'
 ```
 
-### 4. 获取所有文档信息
+### 5. 获取所有文档信息
 
 **端点**: `GET /api/v1/documents`
 
@@ -137,7 +155,7 @@ curl -X GET "http://localhost:8000/api/v1/documents"
 ]
 ```
 
-### 5. 删除文档
+### 6. 删除文档
 
 **端点**: `DELETE /api/v1/documents/{document_path}`
 
@@ -270,6 +288,15 @@ class LocalRAGClient:
             files = {"file": (Path(file_path).name, f, "application/octet-stream")}
             data = {"chunk_size": chunk_size, "chunk_overlap": chunk_overlap}
             return self._request("POST", "/api/v1/ingest/upload", files=files, data=data)
+
+    def ingest_load(self, path: str, chunk_size: int = 300, chunk_overlap: int = 50):
+        """从目录批量摄取文档"""
+        payload = {
+            "path": path,
+            "chunk_size": chunk_size,
+            "chunk_overlap": chunk_overlap
+        }
+        return self._request("POST", "/api/v1/ingest/load", json=payload)
 
     def retrieve(self, query: str, retrieval_k: int = 10, top_k: int = 3, use_reranker: bool = True):
         """检索相关文档"""

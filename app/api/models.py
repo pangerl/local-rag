@@ -6,31 +6,18 @@ API 数据模型
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 from datetime import datetime
+from app.core.config import settings
 
 
-class IngestRequest(BaseModel):
-    """
-    文档摄取请求模型
-
-    用于 /api/v1/ingest 接口的请求参数验证
-    """
-
-    document_path: str = Field(
-        ...,
-        description="文档文件路径，支持 .txt 和 .md 格式",
-        example="documents/example.txt",
-        min_length=1,
-        max_length=500
-    )
-
+class ChunkingOptions(BaseModel):
+    """分块选项"""
     chunk_size: Optional[int] = Field(
         default=None,
         description="文本分片大小（词元数量），如果不指定则使用系统默认值 300",
-        example=300,
+        example=500,
         ge=50,
         le=2000
     )
-
     chunk_overlap: Optional[int] = Field(
         default=None,
         description="相邻分片间的重叠词元数量，如果不指定则使用系统默认值 50",
@@ -48,6 +35,22 @@ class IngestRequest(BaseModel):
                 raise ValueError('chunk_overlap 必须小于 chunk_size')
         return v
 
+
+class IngestRequest(ChunkingOptions):
+    """
+    文档摄取请求模型
+
+    用于 /api/v1/ingest 接口的请求参数验证
+    """
+
+    document_path: str = Field(
+        ...,
+        description="文档文件路径",
+        example="documents/example.txt",
+        min_length=1,
+        max_length=500
+    )
+
     @field_validator('document_path')
     @classmethod
     def validate_document_path(cls, v):
@@ -58,9 +61,8 @@ class IngestRequest(BaseModel):
         v = v.strip()
 
         # 检查文件扩展名
-        allowed_extensions = ['.txt', '.md']
-        if not any(v.lower().endswith(ext) for ext in allowed_extensions):
-            raise ValueError(f'不支持的文件格式，仅支持: {", ".join(allowed_extensions)}')
+        if not any(v.lower().endswith(ext) for ext in settings.SUPPORTED_FORMATS):
+            raise ValueError(f'不支持的文件格式，仅支持: {", ".join(settings.SUPPORTED_FORMATS)}')
 
         return v
 
@@ -68,11 +70,32 @@ class IngestRequest(BaseModel):
         json_schema_extra={
             "example": {
                 "document_path": "documents/python_tutorial.txt",
-                "chunk_size": 300,
+                "chunk_size": 500,
                 "chunk_overlap": 50
             }
         }
     )
+
+
+class IngestLoadRequest(ChunkingOptions):
+    """
+    批量摄取请求模型
+    """
+    path: str = Field(..., description="要加载的本地目录的路径")
+
+
+class IngestLoadResponse(BaseModel):
+    """
+    批量摄取响应模型
+    """
+    success: bool
+    total_files: int
+    processed_files: int
+    failed_files: int
+    failed_details: List[Dict[str, str]]
+    total_chunks_created: int
+    total_chunks_stored: int
+    total_processing_time: float
 
 
 class IngestResponse(BaseModel):

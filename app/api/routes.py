@@ -16,6 +16,8 @@ from pathlib import Path
 from app.api.models import (
     IngestRequest,
     IngestResponse,
+    IngestLoadRequest,
+    IngestLoadResponse,
     RetrieveRequest,
     RetrieveResponse,
     DeleteDocumentRequest,
@@ -26,7 +28,7 @@ from app.api.models import (
     DocumentChunk,
     DocumentInfo
 )
-from app.core.config import Settings
+from app.core.config import settings, Settings
 from app.services.document_service import DocumentService
 from app.services.retriever import VectorRetriever
 from app.services.database import ChromaDBService
@@ -42,7 +44,10 @@ from app.core.exceptions import (
 logger = logging.getLogger(__name__)
 
 # 支持的文档格式
-SUPPORTED_EXTENSIONS = ['.txt', '.md', '.pdf', '.docx', '.doc', '.html', '.xml', '.eml', '.msg']
+SUPPORTED_EXTENSIONS = settings.SUPPORTED_FORMATS
+
+# 数据目录
+DATA_DIR = Path(settings.DATA_PATH)
 
 # 配置模板目录
 templates_dir = Path(__file__).parent.parent / "templates"
@@ -121,7 +126,6 @@ async def ingest_document(
     文档摄取接口
 
     处理文档上传和向量化，支持以下功能：
-    - 文档格式验证（.txt, .md）
     - 基于词元数量的文本分片
     - 文档向量化和存储
     - 完整的错误处理
@@ -213,6 +217,41 @@ async def ingest_document(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="服务器内部错误，请稍后重试"
+        )
+
+
+@router.post(
+    "/ingest/load",
+    response_model=IngestLoadResponse,
+    status_code=status.HTTP_200_OK,
+    summary="批量摄取目录",
+    description="从本地目录批量加载和处理文档",
+)
+async def ingest_load(
+    request: IngestLoadRequest,
+    document_service: DocumentService = Depends(get_document_service)
+) -> IngestLoadResponse:
+    """
+    批量摄取目录接口
+    """
+    try:
+        logger.info(f"开始批量处理目录: {request.path}")
+        load_path = DATA_DIR / request.path
+        if not load_path.is_dir():
+            raise HTTPException(status_code=400, detail="无效的目录路径")
+
+        result = document_service.process_directory(
+            directory_path=load_path,
+            chunk_size=request.chunk_size,
+            chunk_overlap=request.chunk_overlap
+        )
+        return IngestLoadResponse(**result)
+
+    except Exception as e:
+        logger.error(f"批量处理目录时发生错误: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"服务器内部错误: {e}"
         )
 
 

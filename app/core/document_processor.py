@@ -12,6 +12,7 @@ from typing import List, Dict, Any
 
 from langchain_unstructured import UnstructuredLoader
 from langchain_core.documents import Document
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -23,12 +24,10 @@ class DocumentProcessor:
     使用 LangChain 的 UnstructuredLoader 将文件加载为 Document 对象列表，
     并自动添加文件源作为元数据。
     """
-    SUPPORTED_FORMATS = {
-        '.txt', '.md', '.pdf', '.docx', '.doc', '.html', '.xml', '.eml', '.msg'
-    }
 
     def __init__(self):
         """初始化文档加载器"""
+        self.SUPPORTED_FORMATS = set(settings.SUPPORTED_FORMATS)
         logger.info("DocumentProcessor (Loader) 初始化完成 (使用 LangChain/Unstructured)")
 
     def load(self, file_path: str) -> List[Document]:
