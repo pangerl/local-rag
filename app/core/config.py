@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     API_PORT: int = Field(default=8000, description="API 服务端口")
 
     # 支持的文件格式
-    SUPPORTED_FORMATS: list = Field(default=['.txt', '.md', '.pdf', '.docx', '.doc', '.html', '.xml', '.eml', '.msg'], description="支持的文档格式")
+    SUPPORTED_FORMATS: list = Field(default=['.txt', '.md', '.pdf', '.docx', '.doc'], description="支持的文档格式")
 
     @computed_field
     @property
