@@ -37,9 +37,10 @@ WORKDIR /app
 # Copy the generated production requirements file from the builder stage.
 COPY --from=builder /app/requirements.prod.txt .
 
-# Install the production dependencies.
-# --prefer-binary: Prefer binary packages over source packages.
-# -r requirements.prod.txt: Install packages from the specified file.
+
+# 先强制安装 torch 的 CPU 版本，避免拉取 CUDA 相关依赖。
+RUN pip install --prefer-binary torch==2.1.2+cpu -f https://download.pytorch.org/whl/torch_stable.html
+# 再安装其他依赖。
 RUN pip install --prefer-binary -r requirements.prod.txt
 
 # Copy the application code into the final image.
