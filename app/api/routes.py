@@ -8,6 +8,7 @@ import tempfile
 import os
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, status, Depends, Request, UploadFile, File, Form
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from datetime import datetime
@@ -140,84 +141,48 @@ async def ingest_document(
     Raises:
         HTTPException: 各种错误情况的 HTTP 异常
     """
-    try:
-        logger.info(f"开始处理文档摄取请求: {request.document_path}")
+    logger.info(f"开始处理文档摄取请求: {request.document_path}")
 
-        # 验证文件路径和格式
-        doc_path = Path(request.document_path)
-        if not doc_path.is_file():
-            raise FileNotFoundError(f"文件不存在: {request.document_path}")
-
-        file_extension = doc_path.suffix.lower()
-        if file_extension not in SUPPORTED_EXTENSIONS:
-            raise UnsupportedFormatError(f"不支持的文件格式 '{file_extension}'。支持的格式: {', '.join(SUPPORTED_EXTENSIONS)}")
-
-        # 处理文档
-        result = document_service.process_document(
-            document_path=request.document_path,
-            chunk_size=request.chunk_size,
-            chunk_overlap=request.chunk_overlap
-        )
-
-        # 构建响应
-        response = IngestResponse(
-            success=True,
-            message="文档处理成功",
-            document_path=result["document_path"],
-            chunks_created=result["chunks_created"],
-            chunks_stored=result["chunks_stored"],
-            text_length=result["text_length"],
-            processing_time=result["processing_time"],
-            chunk_size=result["chunk_size"],
-            chunk_overlap=result["chunk_overlap"],
-            embedding_dimension=result.get("embedding_dimension"),
-            collection_name=result.get("collection_name")
-        )
-
-        logger.info(f"文档摄取完成: {request.document_path}, 分片数: {result['chunks_created']}")
-        return response
-
-    except FileNotFoundError as e:
-        logger.error(f"文件不存在: {request.document_path}, 错误: {str(e)}")
+    # 安全性检查：确保文件路径在 DATA_DIR 内
+    doc_path = Path(request.document_path).resolve()
+    if not doc_path.is_file():
+        raise FileNotFoundError(f"文件不存在: {request.document_path}")
+    if DATA_DIR.resolve() not in doc_path.parents:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"文件不存在: {request.document_path}"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="禁止访问此文件路径"
         )
 
-    except UnsupportedFormatError as e:
-        logger.error(f"不支持的文件格式: {request.document_path}, 错误: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+    # 验证文件格式
+    file_extension = doc_path.suffix.lower()
+    if file_extension not in SUPPORTED_EXTENSIONS:
+        raise UnsupportedFormatError(f"不支持的文件格式 '{file_extension}'。支持的格式: {', '.join(SUPPORTED_EXTENSIONS)}")
 
-    except DocumentProcessError as e:
-        logger.error(f"文档处理错误: {request.document_path}, 错误: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"文档处理失败: {str(e)}"
-        )
+    # 异步处理文档
+    result = await run_in_threadpool(
+        document_service.process_document,
+        document_path=str(doc_path),
+        chunk_size=request.chunk_size,
+        chunk_overlap=request.chunk_overlap
+    )
 
-    except DatabaseError as e:
-        logger.error(f"数据库错误: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="数据库操作失败，请稍后重试"
-        )
+    # 构建响应
+    response = IngestResponse(
+        success=True,
+        message="文档处理成功",
+        document_path=result["document_path"],
+        chunks_created=result["chunks_created"],
+        chunks_stored=result["chunks_stored"],
+        text_length=result["text_length"],
+        processing_time=result["processing_time"],
+        chunk_size=result["chunk_size"],
+        chunk_overlap=result["chunk_overlap"],
+        embedding_dimension=result.get("embedding_dimension"),
+        collection_name=result.get("collection_name")
+    )
 
-    except ModelLoadError as e:
-        logger.error(f"模型加载错误: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="模型加载失败，请检查模型配置"
-        )
-
-    except Exception as e:
-        logger.error(f"未知错误: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="服务器内部错误，请稍后重试"
-        )
+    logger.info(f"文档摄取完成: {request.document_path}, 分片数: {result['chunks_created']}")
+    return response
 
 
 @router.post(
@@ -234,25 +199,23 @@ async def ingest_load(
     """
     批量摄取目录接口
     """
-    try:
-        logger.info(f"开始批量处理目录: {request.path}")
-        load_path = DATA_DIR / request.path
-        if not load_path.is_dir():
-            raise HTTPException(status_code=400, detail="无效的目录路径")
-
-        result = document_service.process_directory(
-            directory_path=load_path,
-            chunk_size=request.chunk_size,
-            chunk_overlap=request.chunk_overlap
-        )
-        return IngestLoadResponse(**result)
-
-    except Exception as e:
-        logger.error(f"批量处理目录时发生错误: {e}", exc_info=True)
+    logger.info(f"开始批量处理目录: {request.path}")
+    load_path = (DATA_DIR / request.path).resolve()
+    if not load_path.is_dir():
+        raise FileNotFoundError(f"目录不存在: {load_path}")
+    if DATA_DIR.resolve() not in load_path.parents and load_path != DATA_DIR.resolve():
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"服务器内部错误: {e}"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="禁止访问此目录路径"
         )
+
+    result = await run_in_threadpool(
+        document_service.process_directory,
+        directory_path=load_path,
+        chunk_size=request.chunk_size,
+        chunk_overlap=request.chunk_overlap
+    )
+    return IngestLoadResponse(**result)
 
 
 @router.post(
@@ -297,65 +260,45 @@ async def ingest_uploaded_document(
     Raises:
         HTTPException: 各种错误情况的 HTTP 异常
     """
+    logger.info(f"开始处理文档上传摄取请求: {file.filename}")
+
+    # 验证文件名和格式
+    if not file.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="文件名不能为空")
+
+    file_extension = Path(file.filename).suffix.lower()
+    if file_extension not in SUPPORTED_EXTENSIONS:
+        raise UnsupportedFormatError(f"不支持的文件格式 '{file_extension}'。支持的格式: {', '.join(SUPPORTED_EXTENSIONS)}")
+
+    # 验证分片参数
+    if chunk_overlap is not None and chunk_size is not None and chunk_overlap >= chunk_size:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="chunk_overlap 必须小于 chunk_size")
+
     temp_file_path = None
-
     try:
-        logger.info(f"开始处理文档上传摄取请求: {file.filename}")
-
-        # 验证文件名
-        if not file.filename:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="文件名不能为空"
-            )
-
-        # 验证文件格式
-        file_extension = Path(file.filename).suffix.lower()
-
-        if file_extension not in SUPPORTED_EXTENSIONS:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"不支持的文件格式，仅支持: {', '.join(SUPPORTED_EXTENSIONS)}"
-            )
-
-        # 验证文件大小（限制为50MB）
+        # 创建临时文件并流式写入
         max_file_size = 50 * 1024 * 1024  # 50MB
-        file_content = await file.read()
-        file_size = len(file_content)
+        file_size = 0
 
-        if file_size > max_file_size:
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"文件过大，最大支持 {max_file_size // (1024*1024)}MB"
-            )
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as temp_file:
+            temp_file_path = temp_file.name
+            while chunk := await file.read(8192):
+                file_size += len(chunk)
+                if file_size > max_file_size:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail=f"文件过大，最大支持 {max_file_size // (1024*1024)}MB"
+                    )
+                temp_file.write(chunk)
 
         if file_size == 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="文件内容为空"
-            )
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="文件内容为空")
 
-        # 验证分片参数
-        if chunk_overlap is not None and chunk_size is not None:
-            if chunk_overlap >= chunk_size:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="chunk_overlap 必须小于 chunk_size"
-                )
+        logger.info(f"文件已保存到临时路径: {temp_file_path}, 大小: {file_size} 字节")
 
-        # 创建临时文件
-        with tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix=file_extension,
-            prefix=f"upload_{Path(file.filename).stem}_"
-        ) as temp_file:
-            temp_file.write(file_content)
-            temp_file_path = temp_file.name
-
-        logger.info(f"文件已保存到临时路径: {temp_file_path}")
-
-        # 处理文档
-        result = document_service.process_document(
+        # 异步处理文档
+        result = await run_in_threadpool(
+            document_service.process_document,
             document_path=temp_file_path,
             original_filename=file.filename,
             file_size=file_size,
@@ -367,7 +310,7 @@ async def ingest_uploaded_document(
         response = IngestResponse(
             success=True,
             message="文档上传和处理成功",
-            document_path=file.filename,  # 使用原始文件名而不是临时路径
+            document_path=file.filename,
             chunks_created=result["chunks_created"],
             chunks_stored=result["chunks_stored"],
             text_length=result["text_length"],
@@ -380,45 +323,6 @@ async def ingest_uploaded_document(
 
         logger.info(f"文档上传摄取完成: {file.filename}, 分片数: {result['chunks_created']}")
         return response
-
-    except HTTPException:
-        # 重新抛出 HTTP 异常
-        raise
-
-    except UnsupportedFormatError as e:
-        logger.error(f"不支持的文件格式: {file.filename}, 错误: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"不支持的文件格式: {str(e)}"
-        )
-
-    except DocumentProcessError as e:
-        logger.error(f"文档处理错误: {file.filename}, 错误: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"文档处理失败: {str(e)}"
-        )
-
-    except DatabaseError as e:
-        logger.error(f"数据库错误: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="数据库操作失败，请稍后重试"
-        )
-
-    except ModelLoadError as e:
-        logger.error(f"模型加载错误: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="模型加载失败，请检查模型配置"
-        )
-
-    except Exception as e:
-        logger.error(f"文档上传摄取过程中发生未知错误: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="服务器内部错误，请稍后重试"
-        )
 
     finally:
         # 清理临时文件
@@ -466,66 +370,36 @@ async def retrieve_documents(
     Raises:
         HTTPException: 各种错误情况的 HTTP 异常
     """
-    try:
-        logger.info(f"开始处理检索请求: {request.query[:50]}...")
+    logger.info(f"开始处理检索请求: {request.query[:50]}...")
 
-        # 执行检索
-        result = retriever.retrieve(
-            query=request.query,
-            retrieval_k=request.retrieval_k,
-            top_k=request.top_k,
-            use_reranker=request.use_reranker
-        )
+    # 执行检索
+    result = await run_in_threadpool(
+        retriever.retrieve,
+        query=request.query,
+        retrieval_k=request.retrieval_k,
+        top_k=request.top_k,
+        use_reranker=request.use_reranker
+    )
 
-        # 转换结果格式
-        document_chunks = []
-        for chunk_data in result["results"]:
-            chunk = DocumentChunk(
-                id=chunk_data["id"],
-                text=chunk_data["text"],
-                similarity_score=chunk_data["similarity_score"],
-                rerank_score=chunk_data.get("rerank_score"),
-                metadata=chunk_data["metadata"]
-            )
-            document_chunks.append(chunk)
+    # 转换结果格式
+    document_chunks = [DocumentChunk(**chunk_data) for chunk_data in result["results"]]
 
-        # 构建响应
-        response = RetrieveResponse(
-            success=True,
-            message="检索成功",
-            query=result["query"],
-            results=document_chunks,
-            total_candidates=result["total_candidates"],
-            returned_count=result["returned_count"],
-            retrieval_k=result["retrieval_k"],
-            top_k=result["top_k"],
-            use_reranker=result["use_reranker"],
-            timing=result["timing"]
-        )
+    # 构建响应
+    response = RetrieveResponse(
+        success=True,
+        message="检索成功",
+        query=result["query"],
+        results=document_chunks,
+        total_candidates=result["total_candidates"],
+        returned_count=result["returned_count"],
+        retrieval_k=result["retrieval_k"],
+        top_k=result["top_k"],
+        use_reranker=result["use_reranker"],
+        timing=result["timing"]
+    )
 
-        logger.info(f"检索完成: 返回 {result['returned_count']} 个结果，耗时 {result['timing']['total_time']:.3f}s")
-        return response
-
-    except DatabaseError as e:
-        logger.error(f"数据库错误: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="数据库操作失败，请稍后重试"
-        )
-
-    except ModelLoadError as e:
-        logger.error(f"模型加载错误: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="模型加载失败，请检查模型配置"
-        )
-
-    except Exception as e:
-        logger.error(f"检索过程中发生未知错误: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="服务器内部错误，请稍后重试"
-        )
+    logger.info(f"检索完成: 返回 {result['returned_count']} 个结果，耗时 {result['timing']['total_time']:.3f}s")
+    return response
 
 
 @router.get(
@@ -550,38 +424,29 @@ async def health_check(
     Returns:
         HealthResponse: 健康检查结果
     """
-    try:
-        logger.info("执行系统健康检查")
+    logger.info("执行系统健康检查")
 
-        # 获取各服务的健康状态
-        doc_health = document_service.health_check()
-        retriever_health = retriever.health_check()
+    # 获取各服务的健康状态
+    doc_health = await run_in_threadpool(document_service.health_check)
+    retriever_health = await run_in_threadpool(retriever.health_check)
 
-        # 合并健康状态
-        overall_status = "healthy"
-        if doc_health["status"] != "healthy" or retriever_health["status"] != "healthy":
-            overall_status = "unhealthy"
+    # 合并健康状态
+    overall_status = "healthy"
+    if doc_health["status"] != "healthy" or retriever_health["status"] != "healthy":
+        overall_status = "unhealthy"
 
-        components = {
-            "document_service": doc_health,
-            "retriever_service": retriever_health
-        }
+    components = {
+        "document_service": doc_health,
+        "retriever_service": retriever_health
+    }
 
-        response = HealthResponse(
-            status=overall_status,
-            components=components
-        )
+    response = HealthResponse(
+        status=overall_status,
+        components=components
+    )
 
-        logger.info(f"健康检查完成，状态: {overall_status}")
-        return response
-
-    except Exception as e:
-        logger.error(f"健康检查失败: {str(e)}", exc_info=True)
-        return HealthResponse(
-            status="error",
-            components={},
-            error=str(e)
-        )
+    logger.info(f"健康检查完成，状态: {overall_status}")
+    return response
 
 
 @router.get(
@@ -602,26 +467,24 @@ async def get_documents(
     Returns:
         list[DocumentInfo]: 文档信息列表。
     """
-    try:
-        logger.info("获取所有文档信息")
-                # 获取统计信息
-        stats = document_service.get_system_stats()
-        documents = document_service.list_documents_with_stats()
-        document_info_list = [DocumentInfo(**doc) for doc in documents]
-        logger.info(f"成功获取 {len(document_info_list)} 篇文档的信息")
+    logger.info("获取所有文档信息")
 
-        response = StatsResponse(
-            system_stats=stats,
-            documents=document_info_list
-        )
+    # 并行获取统计信息和文档列表
+    stats_future = run_in_threadpool(document_service.get_system_stats)
+    documents_future = run_in_threadpool(document_service.list_documents_with_stats)
 
-        return response
-    except Exception as e:
-        logger.error(f"获取文档列表失败: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="获取文档列表失败，请稍后重试"
-        )
+    stats = await stats_future
+    documents = await documents_future
+
+    document_info_list = [DocumentInfo(**doc) for doc in documents]
+    logger.info(f"成功获取 {len(document_info_list)} 篇文档的信息")
+
+    response = StatsResponse(
+        system_stats=stats,
+        documents=document_info_list
+    )
+
+    return response
 
 
 @router.delete(
@@ -659,71 +522,26 @@ async def delete_document(
     Raises:
         HTTPException: 各种错误情况的 HTTP 异常
     """
-    try:
-        logger.info(f"开始处理文档删除请求: {document_path}")
+    logger.info(f"开始处理文档删除请求: {document_path}")
 
-        # 删除文档
-        result = document_service.delete_document(document_path)
+    # 删除文档
+    result = await run_in_threadpool(document_service.delete_document, document_path)
 
-        # 构建响应
-        if result["status"] == "not_found":
-            response = DeleteDocumentResponse(
-                success=False,
-                message=f"文档不存在: {document_path}",
-                document_path=document_path,
-                chunks_deleted=0,
-                processing_time=result["processing_time"],
-                status="not_found"
-            )
-            logger.warning(f"文档删除失败，文档不存在: {document_path}")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"文档不存在: {document_path}"
-            )
-        else:
-            response = DeleteDocumentResponse(
-                success=True,
-                message="文档删除成功",
-                document_path=result["document_path"],
-                chunks_deleted=result["chunks_deleted"],
-                processing_time=result["processing_time"],
-                status=result["status"]
-            )
+    # 构建响应
+    if result["status"] == "not_found":
+        raise FileNotFoundError(f"文档不存在: {document_path}")
 
-            logger.info(f"文档删除完成: {document_path}, 删除分片数: {result['chunks_deleted']}")
-            return response
+    response = DeleteDocumentResponse(
+        success=True,
+        message="文档删除成功",
+        document_path=result["document_path"],
+        chunks_deleted=result["chunks_deleted"],
+        processing_time=result["processing_time"],
+        status=result["status"]
+    )
 
-    except HTTPException:
-        # 重新抛出 HTTP 异常
-        raise
-
-    except FileNotFoundError as e:
-        logger.error(f"文档不存在: {document_path}, 错误: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"文档不存在: {document_path}"
-        )
-
-    except DocumentProcessError as e:
-        logger.error(f"文档删除错误: {document_path}, 错误: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"文档删除失败: {str(e)}"
-        )
-
-    except DatabaseError as e:
-        logger.error(f"数据库错误: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="数据库操作失败，请稍后重试"
-        )
-
-    except Exception as e:
-        logger.error(f"删除文档时发生未知错误: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="服务器内部错误，请稍后重试"
-        )
+    logger.info(f"文档删除完成: {document_path}, 删除分片数: {result['chunks_deleted']}")
+    return response
 
 
 @admin_router.get(
@@ -748,21 +566,12 @@ async def admin_page(request: Request):
     Returns:
         HTMLResponse: 管理页面HTML内容
     """
-    try:
-        logger.info("访问管理页面")
-
-        # 渲染管理页面模板
-        return templates.TemplateResponse(
-            "admin.html",
-            {"request": request}
-        )
-
-    except Exception as e:
-        logger.error(f"渲染管理页面失败: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="管理页面加载失败，请稍后重试"
-        )
+    logger.info("访问管理页面")
+    # 渲染管理页面模板
+    return templates.TemplateResponse(
+        "admin.html",
+        {"request": request}
+    )
 
 
 @admin_router.get(
@@ -787,18 +596,9 @@ async def admin_search_page(request: Request):
     Returns:
         HTMLResponse: 检索查询页面HTML内容
     """
-    try:
-        logger.info("访问检索查询页面")
-
-        # 渲染检索查询页面模板
-        return templates.TemplateResponse(
-            "search.html",
-            {"request": request}
-        )
-
-    except Exception as e:
-        logger.error(f"渲染检索查询页面失败: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="检索查询页面加载失败，请稍后重试"
-        )
+    logger.info("访问检索查询页面")
+    # 渲染检索查询页面模板
+    return templates.TemplateResponse(
+        "search.html",
+        {"request": request}
+    )

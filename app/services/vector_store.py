@@ -98,8 +98,16 @@ class VectorStore:
             # 为每个 document 生成一个唯一的 ID
             ids = [str(uuid.uuid4()) for _ in filtered_documents]
 
-            logger.info(f"开始向 ChromaDB 添加 {len(filtered_documents)} 个文档分片...")
-            self.vector_db.add_documents(documents=filtered_documents, ids=ids)
+            # 分批插入，避免超过 ChromaDB 限制
+            max_batch_size = 5461
+            total = len(filtered_documents)
+            logger.info(f"开始向 ChromaDB 添加 {total} 个文档分片（分批，每批最大 {max_batch_size}）...")
+            for start in range(0, total, max_batch_size):
+                end = min(start + max_batch_size, total)
+                batch_docs = filtered_documents[start:end]
+                batch_ids = ids[start:end]
+                logger.info(f"插入分片 {start} - {end - 1} ...")
+                self.vector_db.add_documents(documents=batch_docs, ids=batch_ids)
 
             logger.info(f"文档 '{document_path}' 的 {len(filtered_documents)} 个分片存储完成")
 

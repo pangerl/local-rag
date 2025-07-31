@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+from functools import wraps
 
 from app.core.config import Settings
 from app.core.document_processor import DocumentProcessor
@@ -25,6 +26,44 @@ from app.core.exceptions import (
 
 
 logger = logging.getLogger(__name__)
+
+
+def _handle_service_errors(method_name: str):
+    """
+    装饰器工厂，用于统一处理服务层中的异常。
+    """
+    def decorator(method):
+        @wraps(method)
+        def wrapper(self, *args, **kwargs):
+            # 动态获取 document_path 用于日志
+            log_target = "N/A"
+            if 'document_path' in kwargs:
+                log_target = kwargs['document_path']
+            elif 'document_paths' in kwargs:
+                log_target = f"{len(kwargs['document_paths'])} documents"
+            elif 'directory_path' in kwargs:
+                log_target = kwargs['directory_path']
+            elif args:
+                log_target = args[0]
+
+            start_time = time.time()
+            logger.info(f"开始 {method_name}: {log_target}")
+
+            try:
+                result = method(self, *args, **kwargs)
+                processing_time = time.time() - start_time
+                logger.info(f"{method_name} 完成: {log_target}, 耗时: {processing_time:.2f}s")
+                return result
+            except Exception as e:
+                processing_time = time.time() - start_time
+                error_msg = f"{method_name} 失败: {log_target}, 耗时: {processing_time:.2f}s, 错误: {e}"
+                logger.error(error_msg)
+                if isinstance(e, (FileNotFoundError, UnsupportedFormatError, DocumentProcessError, DatabaseError, ModelLoadError)):
+                    raise
+                else:
+                    raise DocumentProcessError(error_msg) from e
+        return wrapper
+    return decorator
 
 
 class DocumentService:
@@ -64,6 +103,7 @@ class DocumentService:
 
         logger.info("文档处理服务初始化完成")
 
+    @_handle_service_errors("处理文档")
     def process_document(self, document_path: str, original_filename: str, file_size: int,
                          chunk_size: Optional[int] = None,
                          chunk_overlap: Optional[int] = None) -> Dict[str, Any]:
@@ -79,136 +119,56 @@ class DocumentService:
 
         Returns:
             Dict[str, Any]: 处理结果信息
-
-        Raises:
-            FileNotFoundError: 当文件不存在时抛出异常
-            UnsupportedFormatError: 当文件格式不支持时抛出异常
-            DocumentProcessError: 当文档处理失败时抛出异常
         """
-        start_time = time.time()
+        start_time = time.time()  # 保留用于精确的 _update_processing_stats
 
-        try:
-            logger.info(f"开始处理文档 (LangChain 流程): {document_path}")
+        # 1. Load: 加载文档为 Document 对象
+        documents = self.document_processor.load(document_path)
+        if not documents:
+            logger.warning(f"文档加载后为空，处理终止: {document_path}")
+            return {"status": "skipped", "message": "Document is empty or unreadable."}
 
-            # 1. Load: 加载文档为 Document 对象
-            documents = self.document_processor.load(document_path)
-            if not documents:
-                logger.warning(f"文档加载后为空，处理终止: {document_path}")
-                return {"status": "skipped", "message": "Document is empty or unreadable."}
+        # 提前计算 text_length
+        text_length = sum(len(doc.page_content) for doc in documents)
 
-            # 提前计算 text_length
-            text_length = sum(len(doc.page_content) for doc in documents)
+        # 确定 chunk_size
+        final_chunk_size = chunk_size or self.settings.DEFAULT_CHUNK_SIZE
+        final_chunk_overlap = chunk_overlap or self.settings.DEFAULT_CHUNK_OVERLAP
 
-            # 确定 chunk_size
-            final_chunk_size = chunk_size or self.settings.DEFAULT_CHUNK_SIZE
-            final_chunk_overlap = chunk_overlap or self.settings.DEFAULT_CHUNK_OVERLAP
+        # 2. Split: 将 Document 分割成块
+        split_docs = self.text_splitter.split_documents(
+            documents,
+            chunk_size=final_chunk_size,
+            chunk_overlap=final_chunk_overlap
+        )
 
-            # 2. Split: 将 Document 分割成块
-            split_docs = self.text_splitter.split_documents(
-                documents,
-                chunk_size=final_chunk_size,
-                chunk_overlap=final_chunk_overlap
-            )
+        # 3. Store: 将分割后的文档存入向量数据库
+        storage_result = self.vector_store.add_documents(
+            split_docs,
+            document_path=original_filename,
+            file_size=file_size,
+            text_length=text_length,
+            chunk_size=final_chunk_size
+        )
 
-            # 3. Store: 将分割后的文档存入向量数据库
-            storage_result = self.vector_store.add_documents(
-                split_docs,
-                document_path=original_filename,
-                file_size=file_size,
-                text_length=text_length,
-                chunk_size=final_chunk_size
-            )
+        # 4. 更新统计信息
+        processing_time = time.time() - start_time
+        self._update_processing_stats(len(split_docs), processing_time)
 
-            # 4. 更新统计信息
-            processing_time = time.time() - start_time
-            self._update_processing_stats(len(split_docs), processing_time)
+        # 5. 准备返回结果
+        return {
+            "document_path": original_filename,
+            "status": "success",
+            "text_length": text_length,
+            "chunks_created": len(split_docs),
+            "chunks_stored": storage_result.get("chunks_stored", 0),
+            "processing_time": processing_time,
+            "chunk_size": final_chunk_size,
+            "chunk_overlap": final_chunk_overlap,
+            "collection_name": storage_result.get("collection_name")
+        }
 
-            # 5. 准备返回结果
-            result = {
-                "document_path": original_filename,
-                "status": "success",
-                "text_length": text_length,
-                "chunks_created": len(split_docs),
-                "chunks_stored": storage_result.get("chunks_stored", 0),
-                "processing_time": processing_time,
-                "chunk_size": final_chunk_size,
-                "chunk_overlap": final_chunk_overlap,
-                "collection_name": storage_result.get("collection_name")
-            }
-
-            logger.info(f"文档处理完成: {document_path}, "
-                       f"耗时: {processing_time:.2f}s, "
-                       f"分片数: {len(split_docs)}")
-
-            return result
-
-        except Exception as e:
-            processing_time = time.time() - start_time
-            error_msg = f"文档处理失败: {document_path}, 耗时: {processing_time:.2f}s, 错误: {str(e)}"
-            logger.error(error_msg)
-
-            if isinstance(e, (FileNotFoundError, UnsupportedFormatError,
-                            DocumentProcessError, DatabaseError, ModelLoadError)):
-                raise
-            else:
-                raise DocumentProcessError(error_msg) from e
-
-    def update_document(self, document_path: str, chunk_size: Optional[int] = None,
-                       chunk_overlap: Optional[int] = None) -> Dict[str, Any]:
-        """
-        更新已存储的文档
-
-        Args:
-            document_path: 文档路径
-            chunk_size: 分片大小（词元数量）
-            chunk_overlap: 分片重叠（词元数量）
-
-        Returns:
-            Dict[str, Any]: 更新结果信息
-        """
-        start_time = time.time()
-
-        try:
-            logger.info(f"开始更新文档 (LangChain 流程): {document_path}")
-
-            # 1. 先删除旧的文档分片
-            delete_result = self.vector_store.delete_document_chunks(document_path)
-
-            # 2. 使用标准处理流程添加新文档
-            # 注意：这里复用了 process_document 的逻辑
-            add_result = self.process_document(document_path, chunk_size, chunk_overlap)
-
-            # 3. 组合结果
-            processing_time = time.time() - start_time
-            result = {
-                "document_path": document_path,
-                "status": "success",
-                "text_length": add_result.get("text_length", 0),
-                "old_chunks_deleted": delete_result.get("chunks_deleted", 0),
-                "new_chunks_stored": add_result.get("chunks_stored", 0),
-                "processing_time": processing_time,
-                "chunk_size": add_result.get("chunk_size"),
-                "chunk_overlap": add_result.get("chunk_overlap")
-            }
-
-            logger.info(f"文档更新完成: {document_path}, "
-                       f"耗时: {processing_time:.2f}s, "
-                       f"删除旧分片: {result['old_chunks_deleted']}, "
-                       f"添加新分片: {result['new_chunks_stored']}")
-
-            return result
-
-        except Exception as e:
-            processing_time = time.time() - start_time
-            error_msg = f"文档更新失败: {document_path}, 耗时: {processing_time:.2f}s, 错误: {str(e)}"
-            logger.error(error_msg)
-
-            if isinstance(e, (FileNotFoundError, UnsupportedFormatError,
-                            DocumentProcessError, DatabaseError, ModelLoadError)):
-                raise
-            else:
-                raise DocumentProcessError(error_msg) from e
-
+    @_handle_service_errors("删除文档")
     def delete_document(self, document_path: str) -> Dict[str, Any]:
         """
         删除已存储的文档
@@ -220,34 +180,17 @@ class DocumentService:
             Dict[str, Any]: 删除结果信息
         """
         start_time = time.time()
+        delete_result = self.vector_store.delete_document_chunks(document_path)
+        processing_time = time.time() - start_time
 
-        try:
-            logger.info(f"开始删除文档: {document_path}")
+        return {
+            "document_path": document_path,
+            "status": delete_result["status"],
+            "chunks_deleted": delete_result.get("chunks_deleted", 0),
+            "processing_time": processing_time
+        }
 
-            # 删除向量存储中的文档分片
-            delete_result = self.vector_store.delete_document_chunks(document_path)
-
-            processing_time = time.time() - start_time
-
-            result = {
-                "document_path": document_path,
-                "status": delete_result["status"],
-                "chunks_deleted": delete_result.get("chunks_deleted", 0),
-                "processing_time": processing_time
-            }
-
-            logger.info(f"文档删除完成: {document_path}, "
-                       f"耗时: {processing_time:.2f}s, "
-                       f"删除分片数: {result['chunks_deleted']}")
-
-            return result
-
-        except Exception as e:
-            processing_time = time.time() - start_time
-            error_msg = f"文档删除失败: {document_path}, 耗时: {processing_time:.2f}s, 错误: {str(e)}"
-            logger.error(error_msg)
-            raise DocumentProcessError(error_msg) from e
-
+    @_handle_service_errors("获取文档信息")
     def get_document_info(self, document_path: str) -> Dict[str, Any]:
         """
         获取文档信息
@@ -258,32 +201,18 @@ class DocumentService:
         Returns:
             Dict[str, Any]: 文档信息
         """
-        try:
-            logger.info(f"获取文档信息: {document_path}")
+        file_info = self.document_processor.get_file_info(document_path)
+        chunks_info = self.vector_store.get_document_chunks(document_path)
 
-            # 获取文件基本信息
-            file_info = self.document_processor.get_file_info(document_path)
-
-            # 获取存储的分片信息
-            chunks_info = self.vector_store.get_document_chunks(document_path)
-
-            result = {
-                "document_path": document_path,
-                "file_info": file_info,
-                "storage_info": {
-                    "is_stored": chunks_info["status"] == "success",
-                    "total_chunks": chunks_info.get("total_chunks", 0),
-                    "chunks": chunks_info.get("chunks", [])
-                }
+        return {
+            "document_path": document_path,
+            "file_info": file_info,
+            "storage_info": {
+                "is_stored": chunks_info["status"] == "success",
+                "total_chunks": chunks_info.get("total_chunks", 0),
+                "chunks": chunks_info.get("chunks", [])
             }
-
-            logger.info(f"文档信息获取完成: {document_path}")
-            return result
-
-        except Exception as e:
-            error_msg = f"获取文档信息失败: {document_path}, 错误: {str(e)}"
-            logger.error(error_msg)
-            raise DocumentProcessError(error_msg) from e
+        }
 
     def batch_process_documents(self, document_paths: List[str],
                                chunk_size: Optional[int] = None,
@@ -300,7 +229,6 @@ class DocumentService:
             Dict[str, Any]: 批量处理结果
         """
         start_time = time.time()
-
         logger.info(f"开始批量处理 {len(document_paths)} 个文档")
 
         results = {
@@ -311,22 +239,35 @@ class DocumentService:
             "errors": []
         }
 
-        for document_path in document_paths:
+        for path_str in document_paths:
             try:
-                result = self.process_document(document_path, chunk_size, chunk_overlap)
+                p = Path(path_str)
+                if not p.is_file():
+                    raise FileNotFoundError(f"文件不存在: {path_str}")
+
+                file_size = p.stat().st_size
+                # 使用文件路径作为 original_filename，因为这是批量处理的上下文
+                original_filename = path_str
+
+                result = self.process_document(
+                    document_path=path_str,
+                    original_filename=original_filename,
+                    file_size=file_size,
+                    chunk_size=chunk_size,
+                    chunk_overlap=chunk_overlap
+                )
                 results["processing_results"].append(result)
                 results["successful_documents"] += 1
 
             except Exception as e:
                 error_info = {
-                    "document_path": document_path,
+                    "document_path": path_str,
                     "error": str(e),
                     "error_type": type(e).__name__
                 }
                 results["errors"].append(error_info)
                 results["failed_documents"] += 1
-
-                logger.error(f"批量处理中文档失败: {document_path}, 错误: {str(e)}")
+                logger.error(f"批量处理中文档失败: {path_str}, 错误: {e}")
 
         total_time = time.time() - start_time
         results["total_processing_time"] = total_time
@@ -364,6 +305,7 @@ class DocumentService:
 
         return stats
 
+    @_handle_service_errors("处理目录")
     def process_directory(self, directory_path: str, chunk_size: Optional[int] = None, chunk_overlap: Optional[int] = None) -> Dict[str, Any]:
         """
         批量处理目录中的所有支持的文档
@@ -376,56 +318,21 @@ class DocumentService:
         Returns:
             Dict[str, Any]: 批量处理结果
         """
-        start_time = time.time()
-        logger.info(f"开始批量处理目录: {directory_path}")
-
         supported_extensions = self.document_processor.SUPPORTED_FORMATS
-        files_to_process = [p for p in Path(directory_path).rglob('*') if p.is_file() and p.suffix.lower() in supported_extensions]
+        files_to_process = [
+            p for p in Path(directory_path).rglob('*')
+            if p.is_file() and p.suffix.lower() in supported_extensions
+        ]
 
-        total_files = len(files_to_process)
-        processed_files = 0
-        failed_files = 0
-        failed_details = []
-        total_chunks_created = 0
-        total_chunks_stored = 0
+        paths_to_process = [str(p) for p in files_to_process]
 
-        for file_path in files_to_process:
-            try:
-                file_size = file_path.stat().st_size
-                result = self.process_document(
-                    document_path=str(file_path),
-                    original_filename=str(file_path),
-                    file_size=file_size,
-                    chunk_size=chunk_size,
-                    chunk_overlap=chunk_overlap
-                )
-                if result.get("status") == "success":
-                    processed_files += 1
-                    total_chunks_created += result.get("chunks_created", 0)
-                    total_chunks_stored += result.get("chunks_stored", 0)
-                else:
-                    failed_files += 1
-                    failed_details.append({"file": str(file_path), "reason": result.get("message", "Unknown error")})
+        return self.batch_process_documents(
+            document_paths=paths_to_process,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap
+        )
 
-            except Exception as e:
-                failed_files += 1
-                failed_details.append({"file": str(file_path), "reason": str(e)})
-                logger.error(f"处理文件失败: {file_path}, 错误: {e}")
-
-        total_processing_time = time.time() - start_time
-        logger.info(f"目录处理完成: {directory_path}, 总耗时: {total_processing_time:.2f}s")
-
-        return {
-            "success": failed_files == 0,
-            "total_files": total_files,
-            "processed_files": processed_files,
-            "failed_files": failed_files,
-            "failed_details": failed_details,
-            "total_chunks_created": total_chunks_created,
-            "total_chunks_stored": total_chunks_stored,
-            "total_processing_time": total_processing_time,
-        }
-
+    @_handle_service_errors("列出带统计的文档")
     def list_documents_with_stats(self) -> List[Dict[str, Any]]:
         """
         获取包含统计信息的文档列表
@@ -433,14 +340,9 @@ class DocumentService:
         Returns:
             List[Dict[str, Any]]: 包含每个文档详细信息的列表
         """
-        try:
-            logger.info("从数据库服务获取文档列表和统计信息")
-            documents = self.db_service.list_documents()
-            return documents
-        except Exception as e:
-            logger.error(f"获取文档列表失败: {str(e)}")
-            raise DatabaseError(f"获取文档列表失败: {str(e)}") from e
+        return self.db_service.list_documents()
 
+    @_handle_service_errors("获取系统统计")
     def get_system_stats(self) -> Dict[str, Any]:
         """
         获取系统层面的统计信息
@@ -448,16 +350,11 @@ class DocumentService:
         Returns:
             Dict[str, Any]: 系统统计信息，如文档总数和分片总数
         """
-        try:
-            logger.info("获取系统统计信息")
-            storage_stats = self.vector_store.get_storage_stats()
-            return {
-                "total_documents": storage_stats.get("total_documents", 0),
-                "total_chunks": storage_stats.get("total_chunks", 0),
-            }
-        except Exception as e:
-            logger.error(f"获取系统统计信息失败: {str(e)}")
-            raise DatabaseError(f"获取系统统计信息失败: {str(e)}") from e
+        storage_stats = self.vector_store.get_storage_stats()
+        return {
+            "total_documents": storage_stats.get("total_documents", 0),
+            "total_chunks": storage_stats.get("total_chunks", 0),
+        }
 
     def _update_processing_stats(self, chunks_count: int, processing_time: float):
         """

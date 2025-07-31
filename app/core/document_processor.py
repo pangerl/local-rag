@@ -10,11 +10,28 @@ import logging
 from pathlib import Path
 from typing import List, Dict, Any
 
-from langchain_unstructured import UnstructuredLoader
+from unstructured.partition.auto import partition
+from unstructured.documents.elements import Element
 from langchain_core.documents import Document
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _elements_to_docs(elements: List[Element], file_path: str) -> List[Document]:
+    """将 Unstructured 的 Element 列表转换为 LangChain 的 Document 列表"""
+    documents = []
+    for element in elements:
+        doc = Document(
+            page_content=str(element),
+            metadata={
+                'source': file_path,
+                'category': element.category,
+                **element.metadata.to_dict()
+            }
+        )
+        documents.append(doc)
+    return documents
 
 
 class DocumentProcessor:
@@ -52,18 +69,10 @@ class DocumentProcessor:
             return []
 
         try:
-            # UnstructuredLoader 会自动处理不同文件的编码
-            # 通过 mode="elements" 和 strategy="fast" 明确指定使用快速、非模型的解析策略
-            # 这可以避免下载和加载大型的 torch/transformers 模型
-            loader = UnstructuredLoader(file_path, mode="elements", strategy="fast")
-            documents = loader.load()
-
-            # UnstructuredLoader 可能会返回多个 Document，
-            # 通常第一个是主要内容，其余是元数据或附加部分。
-            # 在这里我们简单地将它们全部返回，并确保元数据正确。
-            for doc in documents:
-                if 'source' not in doc.metadata:
-                    doc.metadata['source'] = file_path
+            # 直接使用 unstructured.partition.auto 进行文档解析
+            # 这种方式更底层，效率更高，并能避免 LangChain Loader 的一些问题
+            elements = partition(filename=file_path)
+            documents = _elements_to_docs(elements, file_path)
 
             logger.info(f"成功加载文件: {file_path}, 生成 {len(documents)} 个 Document")
             return documents
