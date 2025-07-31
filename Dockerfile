@@ -37,6 +37,11 @@ WORKDIR /app
 # Copy the generated production requirements file from the builder stage.
 COPY --from=builder /app/requirements.prod.txt .
 
+# Install system dependencies required for the application.
+# - libmagic1: Required by python-magic, which is used by 'unstructured' for file type detection.
+RUN apt-get update && \
+    apt-get install -y libmagic1 && \
+    rm -rf /var/lib/apt/lists/*
 
 # 先强制安装 torch 的 CPU 版本，避免拉取 CUDA 相关依赖。
 # RUN pip install --prefer-binary torch==2.7.0 --extra-index-url https://download.pytorch.org/whl/cpu

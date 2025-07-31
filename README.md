@@ -69,6 +69,8 @@ uv pip install -r requirements.txt
 
 ### 4. 启动服务
 
+依赖 `libmagic` 库，根据本地环境自行安装。
+
 ```bash
 # 使用启动脚本（推荐）
 python start_server.py
