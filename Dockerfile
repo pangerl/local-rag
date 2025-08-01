@@ -38,9 +38,16 @@ WORKDIR /app
 COPY --from=builder /app/requirements.prod.txt .
 
 # Install system dependencies required for the application.
-# - libmagic1: Required by python-magic, which is used by 'unstructured' for file type detection.
+# - libmagic1: For file type detection.
+# - libgl1-mesa-glx: For rendering in some PDF libraries.
+# - tesseract-ocr: For Optical Character Recognition (OCR) in documents.
+# - poppler-utils: For PDF processing and text extraction.
 RUN apt-get update && \
-    apt-get install -y libmagic1 && \
+    apt-get install -y --no-install-recommends \
+        libmagic1 \
+        libgl1-mesa-glx \
+        tesseract-ocr \
+        poppler-utils && \
     rm -rf /var/lib/apt/lists/*
 
 # 先强制安装 torch 的 CPU 版本，避免拉取 CUDA 相关依赖。
@@ -50,6 +57,13 @@ RUN pip install --prefer-binary -r requirements.prod.txt
 
 # Copy the application code into the final image.
 COPY . .
+
+# Create a non-root user and change ownership of the app directory for security.
+RUN useradd --create-home --shell /bin/bash appuser && \
+    chown -R appuser:appuser /app
+
+# Switch to the non-root user.
+USER appuser
 
 # Expose the port the application will run on.
 EXPOSE 8000
