@@ -15,4 +15,4 @@ models/
 .vscode/
 data/
 logs/
-
+.env

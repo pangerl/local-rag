@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     # 模型配置
     EMBEDDING_MODEL_DIR: str = Field(default="bge-small-zh-v1.5", description="嵌入模型目录名")
     RERANKER_MODEL_DIR: str = Field(default="bge-reranker-base", description="重排序模型目录名")
+    EMBEDDING_INSTRUCTION: str = Field(
+        default="为这个句子生成表示以用于检索相关文章：",
+        description="嵌入模型的查询指令，如果模型不需要则设为空字符串"
+    )
 
     # 数据库配置
     COLLECTION_NAME: str = Field(default="documents", description="文档集合名称")

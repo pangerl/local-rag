@@ -2,9 +2,9 @@ version: '3.8'
 
 services:
   local-rag:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: hxjagf/local-rag:latest
+    container_name: local-rag
+    restart: always
     ports:
       - "8000:8000"
     volumes:

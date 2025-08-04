@@ -116,11 +116,13 @@ class VectorRetriever:
             model = self._ensure_embedding_model()
             logger.debug(f"开始向量化查询: {query[:50]}...")
 
-            # 根据 BGE 模型文档，为检索任务的查询添加指令以获得更佳性能
-            # 参考: https://huggingface.co/BAAI/bge-small-zh-v1.5
-            # 注意：HuggingFaceEmbeddings 不会自动添加这个，需要手动处理
-            instruction = "为这个句子生成表示以用于检索相关文章："
-            instructed_query = f"{instruction}{query}"
+            # 如果配置了指令，则将其添加到查询中
+            instruction = self.settings.EMBEDDING_INSTRUCTION
+            if instruction:
+                logger.debug(f"使用指令: {instruction}")
+                instructed_query = f"{instruction}{query}"
+            else:
+                instructed_query = query
 
             # 使用 embed_query 方法生成向量
             query_vector_list = model.embed_query(instructed_query)

@@ -8,7 +8,7 @@ from typing import Optional, Dict, Any
 
 class LocalRAGException(Exception):
     """系统基础异常类"""
-    
+
     def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
         self.message = message
         self.details = details or {}
