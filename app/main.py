@@ -8,18 +8,14 @@ import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.encoders import jsonable_encoder
 from pydantic import ValidationError
-import uvicorn
 
 from app.core.config import Settings
 from app.core.logging_config import setup_logging
 from app.core.exceptions import LocalRAGException, ModelLoadError, DatabaseError
 from app.api.routes import router, admin_router, model_manager
-from app.api.models import ErrorResponse
 from app.middleware.exception_handler import exception_handler
 
 # 全局配置
@@ -150,10 +146,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-
-
 
 # 注册统一异常处理器
 app.add_exception_handler(ValidationError, exception_handler.handle_validation_error)

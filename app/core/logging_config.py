@@ -16,17 +16,17 @@ from .config import settings
 
 class StructuredFormatter(logging.Formatter):
     """结构化日志格式化器"""
-    
+
     def __init__(self, include_extra: bool = True):
         """
         初始化结构化格式化器
-        
+
         Args:
             include_extra: 是否包含额外字段
         """
         super().__init__()
         self.include_extra = include_extra
-    
+
     def format(self, record: logging.LogRecord) -> str:
         """格式化日志记录为 JSON"""
         # 基础字段
@@ -39,11 +39,11 @@ class StructuredFormatter(logging.Formatter):
             "function": record.funcName,
             "line": record.lineno
         }
-        
+
         # 添加异常信息
         if record.exc_info:
             log_data["exception"] = self.formatException(record.exc_info)
-        
+
         # 添加额外字段
         if self.include_extra:
             extra_fields = {}
@@ -56,26 +56,26 @@ class StructuredFormatter(logging.Formatter):
                     'exc_text', 'stack_info'
                 }:
                     extra_fields[key] = value
-            
+
             if extra_fields:
                 log_data["extra"] = extra_fields
-        
+
         return json.dumps(log_data, ensure_ascii=False, default=str)
 
 
 class PerformanceLogFilter(logging.Filter):
     """性能日志过滤器"""
-    
+
     def __init__(self, min_duration: float = 0.1):
         """
         初始化性能日志过滤器
-        
+
         Args:
             min_duration: 最小记录时长（秒）
         """
         super().__init__()
         self.min_duration = min_duration
-    
+
     def filter(self, record: logging.LogRecord) -> bool:
         """过滤性能日志"""
         # 检查是否有 duration 字段
@@ -86,32 +86,32 @@ class PerformanceLogFilter(logging.Filter):
 
 class RequestContextFilter(logging.Filter):
     """请求上下文过滤器"""
-    
+
     def filter(self, record: logging.LogRecord) -> bool:
         """添加请求上下文信息"""
         # 尝试从当前上下文获取请求信息
         try:
             from contextvars import copy_context
             context = copy_context()
-            
+
             # 这里可以添加从上下文变量获取请求 ID 等信息的逻辑
             # 目前先设置默认值
             if not hasattr(record, 'request_id'):
                 record.request_id = getattr(record, 'request_id', 'unknown')
-            
+
         except Exception:
             record.request_id = 'unknown'
-        
+
         return True
 
 
 def get_logging_config() -> Dict[str, Any]:
     """获取日志配置字典"""
-    
+
     # 确保日志目录存在
     log_dir = settings.log_file_path.parent
     log_dir.mkdir(parents=True, exist_ok=True)
-    
+
     return {
         "version": 1,
         "disable_existing_loggers": False,
@@ -223,42 +223,20 @@ def get_logging_config() -> Dict[str, Any]:
 def setup_logging():
     """设置日志配置"""
     import logging.config
-    
+
     config = get_logging_config()
     logging.config.dictConfig(config)
-    
+
     # 获取主日志记录器
     logger = logging.getLogger("local_rag")
     logger.info("增强日志系统初始化完成")
-    
+
     # 获取性能日志记录器
     perf_logger = logging.getLogger("local_rag.performance")
-    
+
     return logger
 
 
 def get_performance_logger():
     """获取性能日志记录器"""
     return logging.getLogger("local_rag.performance")
-
-
-def log_performance(func_name: str, duration: float, **kwargs):
-    """
-    记录性能日志
-    
-    Args:
-        func_name: 函数名称
-        duration: 执行时长
-        **kwargs: 额外参数
-    """
-    perf_logger = get_performance_logger()
-    
-    # 构建日志消息
-    message_parts = [f"Function: {func_name}"]
-    for key, value in kwargs.items():
-        message_parts.append(f"{key}: {value}")
-    
-    message = " | ".join(message_parts)
-    
-    # 记录性能日志
-    perf_logger.info(message, extra={"duration": duration, "function": func_name, **kwargs})

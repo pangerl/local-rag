@@ -47,16 +47,17 @@ def _handle_service_errors(method_name: str):
                 log_target = args[0]
 
             start_time = time.time()
-            logger.info(f"开始 {method_name}: {log_target}")
+            log_suffix = f": {log_target}" if log_target != "N/A" else ""
+            logger.info(f"开始 {method_name}{log_suffix}")
 
             try:
                 result = method(self, *args, **kwargs)
                 processing_time = time.time() - start_time
-                logger.info(f"{method_name} 完成: {log_target}, 耗时: {processing_time:.2f}s")
+                logger.info(f"{method_name} 完成{log_suffix}, 耗时: {processing_time:.2f}s")
                 return result
             except Exception as e:
                 processing_time = time.time() - start_time
-                error_msg = f"{method_name} 失败: {log_target}, 耗时: {processing_time:.2f}s, 错误: {e}"
+                error_msg = f"{method_name} 失败{log_suffix}, 耗时: {processing_time:.2f}s, 错误: {e}"
                 logger.error(error_msg)
                 if isinstance(e, (FileNotFoundError, UnsupportedFormatError, DocumentProcessError, DatabaseError, ModelLoadError)):
                     raise
@@ -296,8 +297,8 @@ class DocumentService:
             })
 
             # 添加详细的文档列表信息
-            documents_info = self.vector_store.list_stored_documents()
-            stats["documents"] = documents_info.get("documents", [])
+            documents_list = self.db_service.list_documents()
+            stats["documents"] = documents_list
 
         except Exception as e:
             logger.warning(f"获取存储统计信息失败: {str(e)}")

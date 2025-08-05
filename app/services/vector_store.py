@@ -239,58 +239,6 @@ class VectorStore:
             logger.error(error_msg)
             raise DatabaseError(error_msg) from e
 
-    def list_stored_documents(self) -> Dict[str, Any]:
-        """
-        列出所有已存储的文档
-
-        Returns:
-            Dict[str, Any]: 存储的文档列表信息
-        """
-        try:
-            logger.info("获取所有已存储文档列表")
-
-            collection = self.vector_db._collection
-
-            # 获取所有元数据
-            results = collection.get(include=["metadatas"])
-
-            if not results["metadatas"]:
-                return {
-                    "documents": [],
-                    "total_documents": 0,
-                    "total_chunks": 0,
-                    "status": "empty"
-                }
-
-            # 统计文档信息
-            document_stats = {}
-            for metadata in results["metadatas"]:
-                doc_path = metadata.get("source", "unknown")
-                if doc_path not in document_stats:
-                    document_stats[doc_path] = {
-                        "document_path": doc_path,
-                        "chunk_count": 0,
-                        "created_at": metadata.get("created_at", "unknown")
-                    }
-                document_stats[doc_path]["chunk_count"] += 1
-
-            documents = list(document_stats.values())
-            documents.sort(key=lambda x: x["created_at"], reverse=True)
-
-            logger.info(f"找到 {len(documents)} 个已存储文档，共 {len(results['metadatas'])} 个分片")
-
-            return {
-                "documents": documents,
-                "total_documents": len(documents),
-                "total_chunks": len(results["metadatas"]),
-                "status": "success"
-            }
-
-        except Exception as e:
-            error_msg = f"获取文档列表失败: {str(e)}"
-            logger.error(error_msg)
-            raise DatabaseError(error_msg) from e
-
     def get_storage_stats(self) -> Dict[str, Any]:
         """
         获取存储统计信息
@@ -305,16 +253,17 @@ class VectorStore:
             collection_info = self.db_service.get_collection_info()
 
             # 获取文档列表
-            documents_info = self.list_stored_documents()
+            documents = self.db_service.list_documents()
+            total_documents = len(documents)
 
             # 计算统计信息
             stats = {
                 "collection_name": collection_info["name"],
                 "total_chunks": collection_info["count"],
-                "total_documents": documents_info["total_documents"],
+                "total_documents": total_documents,
                 "average_chunks_per_document": (
-                    collection_info["count"] / documents_info["total_documents"]
-                    if documents_info["total_documents"] > 0 else 0
+                    collection_info["count"] / total_documents
+                    if total_documents > 0 else 0
                 ),
                 "database_path": str(self.db_service.settings.chroma_db_full_path),
                 "embedding_model": self.settings.embedding_model_path,

@@ -3,9 +3,7 @@
 集中管理系统配置参数，支持环境变量覆盖
 """
 
-import os
 from pathlib import Path
-from typing import Optional
 from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings
 

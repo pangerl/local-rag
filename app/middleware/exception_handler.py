@@ -28,12 +28,12 @@ logger = logging.getLogger(__name__)
 
 class ExceptionHandlerMiddleware:
     """统一异常处理中间件"""
-    
+
     def __init__(self):
         """初始化异常处理中间件"""
         self.error_mappings = self._setup_error_mappings()
         logger.info("异常处理中间件初始化完成")
-    
+
     def _setup_error_mappings(self) -> Dict[type, Dict[str, Any]]:
         """设置异常类型到 HTTP 状态码的映射"""
         return {
@@ -95,7 +95,7 @@ class ExceptionHandlerMiddleware:
                 "default_message": "请求超时"
             }
         }
-    
+
     def _get_client_info(self, request: Request) -> Dict[str, Any]:
         """获取客户端信息"""
         return {
@@ -105,7 +105,7 @@ class ExceptionHandlerMiddleware:
             "url": str(request.url),
             "path": request.url.path
         }
-    
+
     def _create_error_response(
         self,
         exception: Exception,
@@ -115,19 +115,19 @@ class ExceptionHandlerMiddleware:
         message: Optional[str] = None
     ) -> ErrorResponse:
         """创建标准化的错误响应"""
-        
+
         # 获取异常映射信息
         exc_type = type(exception)
         mapping = self.error_mappings.get(exc_type, {})
-        
+
         # 确定状态码
         if status_code is None:
             status_code = mapping.get("status_code", status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+
         # 确定错误类型
         if error_type is None:
             error_type = mapping.get("error_type", exc_type.__name__)
-        
+
         # 确定错误消息
         if message is None:
             # 优先使用 HTTPException 的 detail 属性
@@ -143,7 +143,7 @@ class ExceptionHandlerMiddleware:
         # 确保 message 和 error_type 不为 None
         final_message = message if message is not None else "内部服务器错误"
         final_error_type = error_type if error_type is not None else "InternalServerError"
-        
+
         # 构建详细信息
         details = {
             "exception_type": exc_type.__name__,
@@ -151,11 +151,11 @@ class ExceptionHandlerMiddleware:
             "path": request.url.path,
             "method": request.method
         }
-        
+
         # 添加自定义异常的详细信息
         if isinstance(exception, LocalRAGException) and hasattr(exception, 'details'):
             details.update(exception.details)
-        
+
         # 添加 Pydantic 验证错误的详细信息
         if isinstance(exception, ValidationError):
             validation_errors = []
@@ -166,17 +166,17 @@ class ExceptionHandlerMiddleware:
                     "type": error["type"]
                 })
             details["validation_errors"] = validation_errors
-        
+
         # 添加 HTTP 异常的详细信息
         if isinstance(exception, HTTPException):
             details["status_code"] = exception.status_code
-        
+
         return ErrorResponse(
             error=final_error_type,
             message=final_message,
             details=details
         )
-    
+
     def _log_exception(
         self,
         exception: Exception,
@@ -186,17 +186,17 @@ class ExceptionHandlerMiddleware:
     ):
         """记录异常日志"""
         client_info = self._get_client_info(request)
-        
+
         # 构建日志消息
         log_msg = (
             f"[{client_info['ip']}] {client_info['method']} {client_info['path']} - "
             f"异常: {type(exception).__name__}: {str(exception)} - "
             f"状态码: {status_code}"
         )
-        
+
         if response_time is not None:
             log_msg += f" - 耗时: {response_time:.3f}s"
-        
+
         # 根据状态码选择日志级别
         if status_code >= 500:
             logger.error(log_msg, exc_info=True)
@@ -204,12 +204,12 @@ class ExceptionHandlerMiddleware:
             logger.warning(log_msg)
         else:
             logger.info(log_msg)
-        
+
         # 记录详细的异常信息（仅用于调试）
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"异常详情: {traceback.format_exc()}")
             logger.debug(f"请求头: {dict(request.headers)}")
-    
+
     async def handle_validation_error(
         self,
         request: Request,
@@ -219,12 +219,12 @@ class ExceptionHandlerMiddleware:
         assert isinstance(exc, ValidationError)
         error_response = self._create_error_response(exc, request)
         self._log_exception(exc, request, 422)
-        
+
         return JSONResponse(
             status_code=422,
             content=jsonable_encoder(error_response.model_dump())
         )
-    
+
     async def handle_local_rag_exception(
         self,
         request: Request,
@@ -235,14 +235,14 @@ class ExceptionHandlerMiddleware:
         error_response = self._create_error_response(exc, request)
         mapping = self.error_mappings.get(type(exc), {})
         status_code = mapping.get("status_code", 500)
-        
+
         self._log_exception(exc, request, status_code)
-        
+
         return JSONResponse(
             status_code=status_code,
             content=jsonable_encoder(error_response.model_dump())
         )
-    
+
     async def handle_http_exception(
         self,
         request: Request,
@@ -253,14 +253,14 @@ class ExceptionHandlerMiddleware:
         error_response = self._create_error_response(
             exc, request, exc.status_code, f"HTTP{exc.status_code}", exc.detail
         )
-        
+
         self._log_exception(exc, request, exc.status_code)
-        
+
         return JSONResponse(
             status_code=exc.status_code,
             content=jsonable_encoder(error_response.model_dump())
         )
-    
+
     async def handle_general_exception(
         self,
         request: Request,
@@ -270,9 +270,9 @@ class ExceptionHandlerMiddleware:
         error_response = self._create_error_response(exc, request)
         mapping = self.error_mappings.get(type(exc), {})
         status_code = mapping.get("status_code", 500)
-        
+
         self._log_exception(exc, request, status_code)
-        
+
         return JSONResponse(
             status_code=status_code,
             content=jsonable_encoder(error_response.model_dump())

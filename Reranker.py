@@ -15,7 +15,7 @@ def process_inputs(pairs):
     )
     for i, ele in enumerate(inputs['input_ids']):
         inputs['input_ids'][i] = prefix_tokens + ele + suffix_tokens
-    inputs = tokenizer.pad(inputs, padding=True, return_tensors="pt", max_length=max_length)
+    inputs = tokenizer.pad(inputs, padding='max_length', return_tensors="pt", max_length=max_length)
     for key in inputs:
         inputs[key] = inputs[key].to(model.device)
     return inputs

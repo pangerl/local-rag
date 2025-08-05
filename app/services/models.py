@@ -5,6 +5,7 @@ from torch import Tensor
 from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM
 import logging
 from typing import List
+import warnings
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,9 @@ class RerankerModel:
         for i in range(len(inputs['input_ids'])):
             inputs['input_ids'][i] = self.prefix_tokens + inputs['input_ids'][i] + self.suffix_tokens
 
-        inputs = self.tokenizer.pad(inputs, padding=True, return_tensors="pt", max_length=self.max_length)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            inputs = self.tokenizer.pad(inputs, padding=True, return_tensors="pt", max_length=self.max_length)
         for key in inputs:
             inputs[key] = inputs[key].to(self.model.device)
         return inputs
