@@ -17,12 +17,20 @@ class Settings(BaseSettings):
     DATA_PATH: str = Field(default="data", description="数据文件基础路径")
 
     # 模型配置
-    EMBEDDING_MODEL_DIR: str = Field(default="bge-small-zh-v1.5", description="嵌入模型目录名")
-    RERANKER_MODEL_DIR: str = Field(default="bge-reranker-base", description="重排序模型目录名")
+    EMBEDDING_MODEL_DIR: str = Field(default="Qwen3-Embedding-0.6B", description="嵌入模型目录名")
+    RERANKER_MODEL_DIR: str = Field(default="Qwen3-Reranker-0.6B", description="重排序模型目录名")
     EMBEDDING_INSTRUCTION: str = Field(
-        default="为这个句子生成表示以用于检索相关文章：",
+        default="Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:",
         description="嵌入模型的查询指令，如果模型不需要则设为空字符串"
     )
+    RERANKER_INSTRUCTION: str = Field(
+        default="Given a web search query, retrieve relevant passages that answer the query",
+        description="重排序模型的指令，如果模型不需要则设为空字符串"
+    )
+    EMBEDDING_DEVICE: str = Field(default="cpu", description="嵌入模型运行设备 (例如 'cpu', 'cuda')")
+    RERANKER_DEVICE: str = Field(default="cpu", description="重排序模型运行设备 (例如 'cpu', 'cuda')")
+    EMBEDDING_MAX_LENGTH: int = Field(default=8192, description="嵌入模型最大序列长度")
+    EMBEDDING_BATCH_SIZE: int = Field(default=32, description="嵌入模型批处理大小")
 
     # 数据库配置
     COLLECTION_NAME: str = Field(default="documents", description="文档集合名称")

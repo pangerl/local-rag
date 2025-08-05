@@ -7,12 +7,9 @@ import logging
 import time
 from typing import List, Dict, Any, Optional, Tuple, Union
 import numpy as np
-from sentence_transformers import CrossEncoder
-from langchain_huggingface import HuggingFaceEmbeddings
-
 from app.core.config import Settings
 from app.services.database import ChromaDBService
-from app.services.model_loader import ModelLoader
+from app.services.models import EmbeddingModel, RerankerModel
 from app.core.exceptions import ModelLoadError, DatabaseError
 
 
@@ -28,22 +25,20 @@ class VectorRetriever:
     """
 
     def __init__(self, settings: Settings, db_service: ChromaDBService,
-                 model_loader: ModelLoader):
+                 embedding_model: EmbeddingModel, reranker_model: RerankerModel):
         """
         初始化向量检索器
 
         Args:
             settings: 系统配置对象
             db_service: ChromaDB 数据库服务
-            model_loader: 模型加载器
+            embedding_model: 嵌入模型实例
+            reranker_model: 重排序模型实例
         """
         self.settings = settings
         self.db_service = db_service
-        self.model_loader = model_loader
-
-        # 模型缓存
-        self.embedding_model: Optional[HuggingFaceEmbeddings] = None
-        self.reranker_model: Optional[CrossEncoder] = None
+        self.embedding_model = embedding_model
+        self.reranker_model = reranker_model
 
         # 检索统计
         self.retrieval_stats = {
@@ -56,48 +51,6 @@ class VectorRetriever:
         }
 
         logger.info("向量检索器初始化完成")
-
-    def _ensure_embedding_model(self) -> HuggingFaceEmbeddings:
-        """
-        确保嵌入模型已加载
-
-        Returns:
-            HuggingFaceEmbeddings: 嵌入模型实例
-
-        Raises:
-            ModelLoadError: 当模型加载失败时抛出异常
-        """
-        if self.embedding_model is None:
-            try:
-                logger.info("加载嵌入模型用于查询向量化")
-                self.embedding_model = self.model_loader.load_embedding_model()
-            except Exception as e:
-                error_msg = f"嵌入模型加载失败: {str(e)}"
-                logger.error(error_msg)
-                raise ModelLoadError(error_msg) from e
-
-        return self.embedding_model
-
-    def _ensure_reranker_model(self) -> CrossEncoder:
-        """
-        确保重排序模型已加载
-
-        Returns:
-            CrossEncoder: 重排序模型实例
-
-        Raises:
-            ModelLoadError: 当模型加载失败时抛出异常
-        """
-        if self.reranker_model is None:
-            try:
-                logger.info("加载重排序模型用于结果重排序")
-                self.reranker_model = self.model_loader.load_reranker_model()
-            except Exception as e:
-                error_msg = f"重排序模型加载失败: {str(e)}"
-                logger.error(error_msg)
-                raise ModelLoadError(error_msg) from e
-
-        return self.reranker_model
 
     def _vectorize_query(self, query: str) -> np.ndarray:
         """
@@ -113,22 +66,18 @@ class VectorRetriever:
             ModelLoadError: 当向量化失败时抛出异常
         """
         try:
-            model = self._ensure_embedding_model()
             logger.debug(f"开始向量化查询: {query[:50]}...")
 
             # 如果配置了指令，则将其添加到查询中
             instruction = self.settings.EMBEDDING_INSTRUCTION
             if instruction:
                 logger.debug(f"使用指令: {instruction}")
-                instructed_query = f"{instruction}{query}"
+                instructed_query = self.embedding_model.get_detailed_instruct(instruction, query)
             else:
                 instructed_query = query
 
             # 使用 embed_query 方法生成向量
-            query_vector_list = model.embed_query(instructed_query)
-
-            # 转换为 numpy 数组
-            query_vector = np.array(query_vector_list, dtype=np.float32)
+            query_vector = self.embedding_model.encode([instructed_query])[0].numpy()
 
             logger.debug(f"查询向量化完成，维度: {query_vector.shape}")
             return query_vector
@@ -216,14 +165,13 @@ class VectorRetriever:
             return chunks
 
         try:
-            model = self._ensure_reranker_model()
-            logger.debug(f"开始重排序 {len(chunks)} 个候选结果")
+            logger.debug(f"开始重排序 {len(chunks)} 个候选结果...")
 
             # 准备查询-文档对
-            query_doc_pairs = [[query, chunk["text"]] for chunk in chunks]
+            documents = [chunk["text"] for chunk in chunks]
+            instruction = self.settings.RERANKER_INSTRUCTION
 
-            # 计算重排序分数
-            scores = model.predict(query_doc_pairs, show_progress_bar=False)
+            scores = self.reranker_model.rerank(query, documents, instruction=instruction)
 
             if scores is None:
                 logger.warning("重排序模型返回 None，跳过重排序")
@@ -448,12 +396,12 @@ class VectorRetriever:
             db_health = self.db_service.health_check()
             health_info["components"]["database"] = db_health
 
-            # 检查模型加载器
-            model_info = self.model_loader.get_model_info()
+            # 检查模型
+            models_healthy = self.embedding_model is not None and self.reranker_model is not None
             health_info["components"]["models"] = {
-                "status": "healthy" if model_info["models_loaded"] else "unhealthy",
-                "embedding_model_loaded": model_info["embedding_model_loaded"],
-                "reranker_model_loaded": model_info["reranker_model_loaded"]
+                "status": "healthy" if models_healthy else "unhealthy",
+                "embedding_model_loaded": self.embedding_model is not None,
+                "reranker_model_loaded": self.reranker_model is not None
             }
 
             # 检查集合中是否有数据
@@ -473,7 +421,6 @@ class VectorRetriever:
 
             # 确定整体状态
             db_healthy = db_health["status"] == "healthy"
-            models_healthy = health_info["components"]["models"]["status"] == "healthy"
 
             if db_healthy and models_healthy:
                 health_info["status"] = "healthy"

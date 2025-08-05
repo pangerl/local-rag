@@ -33,13 +33,13 @@ from app.core.config import settings, Settings
 from app.services.document_service import DocumentService
 from app.services.retriever import VectorRetriever
 from app.services.database import ChromaDBService
-from app.services.model_loader import ModelLoader
+from app.services.models import EmbeddingModel, RerankerModel
 from app.core.exceptions import (
     DocumentProcessError,
     UnsupportedFormatError,
     FileNotFoundError,
     DatabaseError,
-    ModelLoadError
+    ModelLoadError,
 )
 
 logger = logging.getLogger(__name__)
@@ -60,49 +60,73 @@ router = APIRouter(prefix="/api/v1", tags=["Local RAG API"])
 # 创建管理页面路由器（不带前缀）
 admin_router = APIRouter(tags=["Admin Interface"])
 
-# 全局服务实例（将在应用启动时初始化）
-_document_service: DocumentService = None
-_retriever: VectorRetriever = None
+class ModelManager:
+    def __init__(self, settings: Settings):
+        self.settings = settings
+        self.embedding_model: Optional[EmbeddingModel] = None
+        self.reranker_model: Optional[RerankerModel] = None
+        self._document_service: Optional[DocumentService] = None
+        self._retriever: Optional[VectorRetriever] = None
+        self._db_service: Optional[ChromaDBService] = None
 
+    def load_models(self):
+        try:
+            logger.info("开始加载嵌入模型...")
+            self.embedding_model = EmbeddingModel(
+                model_path=str(self.settings.embedding_model_path),
+                device=self.settings.EMBEDDING_DEVICE,
+                max_length=self.settings.EMBEDDING_MAX_LENGTH,
+            )
+            logger.info("嵌入模型加载成功")
+
+            logger.info("开始加载重排序模型...")
+            self.reranker_model = RerankerModel(
+                model_path=str(self.settings.reranker_model_path),
+                device=self.settings.RERANKER_DEVICE,
+                max_length=self.settings.RERANKER_MAX_LENGTH,
+            )
+            logger.info("重排序模型加载成功")
+
+            self._db_service = ChromaDBService(self.settings)
+            self._document_service = DocumentService(self.settings, self._db_service, self.embedding_model)
+            self._retriever = VectorRetriever(self.settings, self._db_service, self.embedding_model, self.reranker_model)
+            logger.info("所有服务初始化完成")
+
+        except Exception as e:
+            logger.error(f"模型或服务加载失败: {e}", exc_info=True)
+            raise ModelLoadError(f"模型或服务加载失败: {e}") from e
+
+    def unload_models(self):
+        logger.info("开始卸载模型和服务...")
+        del self.embedding_model
+        del self.reranker_model
+        del self._document_service
+        del self._retriever
+        del self._db_service
+        self.embedding_model = None
+        self.reranker_model = None
+        self._document_service = None
+        self._retriever = None
+        self._db_service = None
+        logger.info("模型和服务已卸载")
+
+    def get_document_service(self) -> DocumentService:
+        if not self._document_service:
+            raise HTTPException(status_code=503, detail="文档服务未初始化")
+        return self._document_service
+
+    def get_retriever(self) -> VectorRetriever:
+        if not self._retriever:
+            raise HTTPException(status_code=503, detail="检索服务未初始化")
+        return self._retriever
+
+model_manager = ModelManager(settings)
 
 def get_document_service() -> DocumentService:
-    """获取文档服务实例"""
-    if _document_service is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="文档服务未初始化"
-        )
-    return _document_service
-
+    return model_manager.get_document_service()
 
 def get_retriever() -> VectorRetriever:
-    """获取检索器实例"""
-    if _retriever is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="检索服务未初始化"
-        )
-    return _retriever
-
-
-def init_services(settings: Settings):
-    """初始化服务实例"""
-    global _document_service, _retriever
-
-    try:
-        # 初始化服务组件
-        db_service = ChromaDBService(settings)
-        model_loader = ModelLoader(settings)
-
-        # 创建服务实例
-        _document_service = DocumentService(settings, db_service, model_loader)
-        _retriever = VectorRetriever(settings, db_service, model_loader)
-
-        logger.info("API 服务初始化完成")
-
-    except Exception as e:
-        logger.error(f"API 服务初始化失败: {str(e)}")
-        raise
+    return model_manager.get_retriever()
 
 
 @router.post(
@@ -158,10 +182,15 @@ async def ingest_document(
     if file_extension not in SUPPORTED_EXTENSIONS:
         raise UnsupportedFormatError(f"不支持的文件格式 '{file_extension}'。支持的格式: {', '.join(SUPPORTED_EXTENSIONS)}")
 
+    # 获取文件大小
+    file_size = doc_path.stat().st_size
+
     # 异步处理文档
     result = await run_in_threadpool(
         document_service.process_document,
         document_path=str(doc_path),
+        original_filename=request.document_path,
+        file_size=file_size,
         chunk_size=request.chunk_size,
         chunk_overlap=request.chunk_overlap
     )

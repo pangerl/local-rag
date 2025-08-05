@@ -38,28 +38,6 @@ def download_model(repo_id: str, local_dir: Path, description: str):
         logger.error(f"❌ {description} 下载失败: {e}")
         return False
 
-def verify_model(model_dir: Path, model_name: str):
-    """验证模型文件完整性"""
-    required_files = [
-        "config.json",
-        # "pytorch_model.bin",
-        "tokenizer.json",
-        "tokenizer_config.json"
-    ]
-
-    missing_files = []
-    for file_name in required_files:
-        file_path = model_dir / file_name
-        if not file_path.exists():
-            missing_files.append(file_name)
-
-    if missing_files:
-        logger.warning(f"⚠️  {model_name} 缺少文件: {missing_files}")
-        return False
-    else:
-        logger.info(f"✅ {model_name} 文件完整")
-        return True
-
 def main():
     """主函数"""
     logger.info("开始下载 Local RAG 系统模型...")
@@ -67,14 +45,14 @@ def main():
     # 模型配置
     models = [
         {
-            "repo_id": "BAAI/bge-m3",
-            "local_dir": Path("models/bge-m3"),
-            "description": "中文嵌入模型 (bge-m3)"
+            "repo_id": "Qwen/Qwen3-Embedding-0.6B",
+            "local_dir": Path("models/Qwen3-Embedding-0.6B"),
+            "description": "嵌入模型 (Qwen3-Embedding-0.6B)"
         },
         {
-            "repo_id": "BAAI/bge-reranker-v2-m3",
-            "local_dir": Path("models/bge-reranker-v2-m3"),
-            "description": "重排序模型 (bge-reranker-v2-m3)"
+            "repo_id": "Qwen/Qwen3-Reranker-0.6B",
+            "local_dir": Path("models/Qwen3-Reranker-0.6B"),
+            "description": "重排序模型 (Qwen3-Reranker-0.6B)"
         }
     ]
 
@@ -93,8 +71,7 @@ def main():
     success_count = 0
     for model in models:
         if download_model(model["repo_id"], model["local_dir"], model["description"]):
-            if verify_model(model["local_dir"], model["description"]):
-                success_count += 1
+            success_count += 1
 
     # 总结
     logger.info(f"模型下载完成: {success_count}/{len(models)} 成功")

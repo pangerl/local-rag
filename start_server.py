@@ -5,21 +5,33 @@ Local RAG 系统启动脚本
 
 import sys
 from pathlib import Path
+import uvicorn
 
 # 添加项目根目录到 Python 路径
 sys.path.insert(0, str(Path(__file__).parent))
 
-from app.main import run_server
+from app.core.config import settings
+from app.core.logging_config import setup_logging
+
+# 设置日志
+logger = setup_logging()
 
 if __name__ == "__main__":
-    print("启动 Local RAG 系统...")
-    print("按 Ctrl+C 停止服务器")
-    print("-" * 50)
+    logger.info("启动 Local RAG 系统...")
+    logger.info("按 Ctrl+C 停止服务器")
+    logger.info("-" * 50)
 
     try:
-        run_server()
+        uvicorn.run(
+            "app.main:app",
+            host=settings.API_HOST,
+            port=settings.API_PORT,
+            reload=False,
+            log_level=settings.LOG_LEVEL.lower(),
+            access_log=True,
+        )
     except KeyboardInterrupt:
-        print("\n服务器已停止")
+        logger.info("\n服务器已停止")
     except Exception as e:
-        print(f"启动失败: {e}")
+        logger.error(f"服务器启动失败: {str(e)}", exc_info=True)
         sys.exit(1)

@@ -10,15 +10,26 @@ from datetime import datetime
 
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
+from langchain_core.embeddings import Embeddings
 from langchain_community.vectorstores.utils import filter_complex_metadata
 
 from app.core.config import Settings
 from app.services.database import ChromaDBService
-from app.services.model_loader import ModelLoader
+from app.services.models import EmbeddingModel
 from app.core.exceptions import DatabaseError, ModelLoadError
 
 logger = logging.getLogger(__name__)
 
+
+class LangchainEmbedding(Embeddings):
+    def __init__(self, embedding_model: EmbeddingModel):
+        self.embedding_model = embedding_model
+
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        return self.embedding_model.encode(texts).tolist()
+
+    def embed_query(self, text: str) -> List[float]:
+        return self.embedding_model.encode([text])[0].tolist()
 
 class VectorStore:
     """
@@ -27,22 +38,22 @@ class VectorStore:
     使用 LangChain 与 ChromaDB 的集成，简化文档存储和检索流程。
     """
 
-    def __init__(self, settings: Settings, db_service: ChromaDBService, model_loader: ModelLoader):
+    def __init__(self, settings: Settings, db_service: ChromaDBService, embedding_model: EmbeddingModel):
         """
         初始化向量存储服务
 
         Args:
             settings: 系统配置对象
             db_service: ChromaDB 数据库服务
-            model_loader: 模型加载器
+            embedding_model: 嵌入模型实例
         """
         self.settings = settings
         self.db_service = db_service
-        self.model_loader = model_loader
+        self.embedding_model = embedding_model
 
         try:
             logger.info("初始化 LangChain Chroma 向量存储...")
-            embedding_function = self.model_loader.load_embedding_model()
+            embedding_function = LangchainEmbedding(self.embedding_model)
 
             self.vector_db: Chroma = Chroma(
                 client=self.db_service.connect(),
@@ -306,7 +317,7 @@ class VectorStore:
                     if documents_info["total_documents"] > 0 else 0
                 ),
                 "database_path": str(self.db_service.settings.chroma_db_full_path),
-                "embedding_model": str(self.settings.embedding_model_path),
+                "embedding_model": self.settings.embedding_model_path,
                 "status": "success"
             }
 

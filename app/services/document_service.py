@@ -15,7 +15,7 @@ from app.core.document_processor import DocumentProcessor
 from app.core.chunker import TextChunker
 from app.services.vector_store import VectorStore
 from app.services.database import ChromaDBService
-from app.services.model_loader import ModelLoader
+from app.services.models import EmbeddingModel
 from app.core.exceptions import (
     DocumentProcessError,
     UnsupportedFormatError,
@@ -74,24 +74,23 @@ class DocumentService:
     提供文档处理过程的错误处理、异常管理和性能监控
     """
 
-    def __init__(self, settings: Settings, db_service: ChromaDBService,
-                 model_loader: ModelLoader):
+    def __init__(self, settings: Settings, db_service: ChromaDBService, embedding_model: EmbeddingModel):
         """
         初始化文档处理服务
 
         Args:
             settings: 系统配置对象
             db_service: ChromaDB 数据库服务
-            model_loader: 模型加载器
+            embedding_model: 嵌入模型实例
         """
         self.settings = settings
         self.db_service = db_service
-        self.model_loader = model_loader
+        self.embedding_model = embedding_model
 
         # 初始化组件
         self.document_processor = DocumentProcessor()
         self.text_splitter = TextChunker()
-        self.vector_store = VectorStore(settings, db_service, model_loader)
+        self.vector_store = VectorStore(settings, db_service, embedding_model)
 
         # 性能监控统计
         self.processing_stats = {
@@ -390,14 +389,6 @@ class DocumentService:
             db_health = self.db_service.health_check()
             health_info["components"]["database"] = db_health
 
-            # 检查模型加载器
-            model_info = self.model_loader.get_model_info()
-            health_info["components"]["models"] = {
-                "status": "healthy" if model_info["models_loaded"] else "unhealthy",
-                "embedding_model_loaded": model_info["embedding_model_loaded"],
-                "reranker_model_loaded": model_info["reranker_model_loaded"]
-            }
-
             # 检查文档处理器
             health_info["components"]["document_processor"] = {
                 "status": "healthy",
@@ -411,12 +402,7 @@ class DocumentService:
             }
 
             # 确定整体状态
-            all_healthy = (
-                db_health["status"] == "healthy" and
-                health_info["components"]["models"]["status"] == "healthy"
-            )
-
-            health_info["status"] = "healthy" if all_healthy else "unhealthy"
+            health_info["status"] = "healthy" if db_health["status"] == "healthy" else "unhealthy"
 
         except Exception as e:
             health_info["status"] = "error"
