@@ -51,7 +51,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # 先强制安装 torch 的 CPU 版本，避免拉取 CUDA 相关依赖。
-# RUN pip install --prefer-binary torch==2.7.0 --extra-index-url https://download.pytorch.org/whl/cpu
+RUN pip install --prefer-binary torch==2.7.0 --extra-index-url https://download.pytorch.org/whl/cpu
 # 再安装其他依赖。
 RUN pip install --prefer-binary -r requirements.prod.txt
 
