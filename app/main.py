@@ -126,7 +126,7 @@ app = FastAPI(
     2. 然后使用 `/api/v1/retrieve` 接口检索相关信息
     3. 使用 `/api/v1/health` 检查系统状态
     """,
-    version="1.0.0",
+    version="1.1.0",
     contact={
         "name": "Local RAG System",
         "url": "https://github.com/pangerl/local-rag",

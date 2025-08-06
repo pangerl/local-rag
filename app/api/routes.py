@@ -15,13 +15,11 @@ from datetime import datetime
 from pathlib import Path
 
 from app.api.models import (
-    IngestRequest,
     IngestResponse,
     IngestLoadRequest,
     IngestLoadResponse,
     RetrieveRequest,
     RetrieveResponse,
-    DeleteDocumentRequest,
     DeleteDocumentResponse,
     ErrorResponse,
     HealthResponse,
@@ -98,11 +96,6 @@ class ModelManager:
 
     def unload_models(self):
         logger.info("开始卸载模型和服务...")
-        del self.embedding_model
-        del self.reranker_model
-        del self._document_service
-        del self._retriever
-        del self._db_service
         self.embedding_model = None
         self.reranker_model = None
         self._document_service = None
@@ -129,90 +122,6 @@ def get_retriever() -> VectorRetriever:
     return model_manager.get_retriever()
 
 
-@router.post(
-    "/ingest",
-    response_model=IngestResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="文档摄取",
-    description="上传和处理文档，将文档分片并存储到向量数据库中",
-    responses={
-        201: {"description": "文档处理成功"},
-        400: {"model": ErrorResponse, "description": "请求参数错误"},
-        404: {"model": ErrorResponse, "description": "文件不存在"},
-        422: {"model": ErrorResponse, "description": "参数验证失败"},
-        500: {"model": ErrorResponse, "description": "服务器内部错误"}
-    }
-)
-async def ingest_document(
-    request: IngestRequest,
-    document_service: DocumentService = Depends(get_document_service)
-) -> IngestResponse:
-    """
-    文档摄取接口
-
-    处理文档上传和向量化，支持以下功能：
-    - 基于词元数量的文本分片
-    - 文档向量化和存储
-    - 完整的错误处理
-
-    Args:
-        request: 文档摄取请求参数
-        document_service: 文档处理服务
-
-    Returns:
-        IngestResponse: 处理结果和统计信息
-
-    Raises:
-        HTTPException: 各种错误情况的 HTTP 异常
-    """
-    logger.info(f"开始处理文档摄取请求: {request.document_path}")
-
-    # 安全性检查：确保文件路径在 DATA_DIR 内
-    doc_path = Path(request.document_path).resolve()
-    if not doc_path.is_file():
-        raise FileNotFoundError(f"文件不存在: {request.document_path}")
-    if DATA_DIR.resolve() not in doc_path.parents:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="禁止访问此文件路径"
-        )
-
-    # 验证文件格式
-    file_extension = doc_path.suffix.lower()
-    if file_extension not in SUPPORTED_EXTENSIONS:
-        raise UnsupportedFormatError(f"不支持的文件格式 '{file_extension}'。支持的格式: {', '.join(SUPPORTED_EXTENSIONS)}")
-
-    # 获取文件大小
-    file_size = doc_path.stat().st_size
-
-    # 异步处理文档
-    result = await run_in_threadpool(
-        document_service.process_document,
-        document_path=str(doc_path),
-        original_filename=request.document_path,
-        file_size=file_size,
-        chunk_size=request.chunk_size,
-        chunk_overlap=request.chunk_overlap
-    )
-
-    # 构建响应
-    response = IngestResponse(
-        success=True,
-        message="文档处理成功",
-        document_path=result["document_path"],
-        chunks_created=result["chunks_created"],
-        chunks_stored=result["chunks_stored"],
-        text_length=result["text_length"],
-        processing_time=result["processing_time"],
-        chunk_size=result["chunk_size"],
-        chunk_overlap=result["chunk_overlap"],
-        embedding_dimension=result.get("embedding_dimension"),
-        collection_name=result.get("collection_name")
-    )
-
-    logger.info(f"文档摄取完成: {request.document_path}, 分片数: {result['chunks_created']}")
-    return response
-
 
 @router.post(
     "/ingest/load",
@@ -229,18 +138,9 @@ async def ingest_load(
     批量摄取目录接口
     """
     logger.info(f"开始批量处理目录: {request.path}")
-    load_path = (DATA_DIR / request.path).resolve()
-    if not load_path.is_dir():
-        raise FileNotFoundError(f"目录不存在: {load_path}")
-    if DATA_DIR.resolve() not in load_path.parents and load_path != DATA_DIR.resolve():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="禁止访问此目录路径"
-        )
-
     result = await run_in_threadpool(
         document_service.process_directory,
-        directory_path=load_path,
+        directory_path=request.path,
         chunk_size=request.chunk_size,
         chunk_overlap=request.chunk_overlap
     )
@@ -248,10 +148,10 @@ async def ingest_load(
 
 
 @router.post(
-    "/ingest/upload",
+    "/ingest",
     response_model=IngestResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="文档上传摄取",
+    summary="上传文档摄取",
     description="上传文件并处理文档，将文档分片并存储到向量数据库中",
     responses={
         201: {"description": "文档处理成功"},
@@ -261,14 +161,14 @@ async def ingest_load(
         500: {"model": ErrorResponse, "description": "服务器内部错误"}
     }
 )
-async def ingest_uploaded_document(
+async def ingest_document(
     file: UploadFile = File(..., description="要上传的文档文件"),
     chunk_size: Optional[int] = Form(default=None, description="文本分片大小（词元数量）", ge=50, le=2000),
     chunk_overlap: Optional[int] = Form(default=None, description="相邻分片间的重叠词元数量", ge=0, le=500),
     document_service: DocumentService = Depends(get_document_service)
 ) -> IngestResponse:
     """
-    文档上传摄取接口
+    上传文档摄取接口
 
     处理文件上传和文档向量化，支持以下功能：
     - 多种文档格式支持（.txt, .md, .pdf, .docx, .doc, .html, .xml, .eml, .msg）
@@ -439,42 +339,23 @@ async def retrieve_documents(
     description="检查系统各组件的健康状态"
 )
 async def health_check(
-    document_service: DocumentService = Depends(get_document_service),
-    retriever: VectorRetriever = Depends(get_retriever)
+    document_service: DocumentService = Depends(get_document_service)
 ) -> HealthResponse:
     """
     健康检查接口
 
-    检查系统各组件的健康状态，包括：
-    - 数据库连接状态
-    - 模型加载状态
-    - 服务组件状态
-
-    Returns:
-        HealthResponse: 健康检查结果
+    检查系统核心服务是否可用。
     """
     logger.info("执行系统健康检查")
-
-    # 获取各服务的健康状态
-    doc_health = await run_in_threadpool(document_service.health_check)
-    retriever_health = await run_in_threadpool(retriever.health_check)
-
-    # 合并健康状态
-    overall_status = "healthy"
-    if doc_health["status"] != "healthy" or retriever_health["status"] != "healthy":
-        overall_status = "unhealthy"
-
-    components = {
-        "document_service": doc_health,
-        "retriever_service": retriever_health
-    }
+    health_status = await run_in_threadpool(document_service.health_check)
 
     response = HealthResponse(
-        status=overall_status,
-        components=components
+        status=health_status.get("status", "unhealthy"),
+        components={"document_service": health_status},
+        timestamp=datetime.now()
     )
 
-    logger.info(f"健康检查完成，状态: {overall_status}")
+    logger.info(f"健康检查完成，状态: {response.status}")
     return response
 
 
@@ -535,11 +416,7 @@ async def delete_document(
     """
     删除文档接口
 
-    删除指定的文档及其在向量数据库中的所有分片数据，支持以下功能：
-    - 验证文档路径
-    - 删除向量数据库中的分片
-    - 返回删除统计信息
-    - 完整的错误处理
+    删除指定的文档及其在向量数据库中的所有分片数据。
 
     Args:
         document_path: 要删除的文档路径
@@ -547,9 +424,6 @@ async def delete_document(
 
     Returns:
         DeleteDocumentResponse: 删除结果和统计信息
-
-    Raises:
-        HTTPException: 各种错误情况的 HTTP 异常
     """
     logger.info(f"开始处理文档删除请求: {document_path}")
 

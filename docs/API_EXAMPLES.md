@@ -32,41 +32,23 @@ curl http://localhost:8000/api/v1/health
 
 ## 📦 文档管理 API
 
-### 1. 文档摄取 (基于路径)
+### 1. 文档摄取 (文件上传)
 
 **端点**: `POST /api/v1/ingest`
-
-此接口用于处理存储在服务器本地路径的文档。
-
-**cURL 示例**:
-
-```bash
-curl -X POST "http://localhost:8000/api/v1/ingest" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "document_path": "docs/technical_manual.txt",
-    "chunk_size": 400,
-    "chunk_overlap": 80
-  }'
-```
-
-### 2. 文档摄取 (文件上传)
-
-**端点**: `POST /api/v1/ingest/upload`
 
 此接口用于直接上传文档文件进行处理，支持多种格式。
 
 **cURL 示例**:
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/ingest/upload" \
+curl -X POST "http://localhost:8000/api/v1/ingest" \
   -H "Content-Type: multipart/form-data" \
   -F "file=@/path/to/your/document.pdf" \
   -F "chunk_size=300" \
   -F "chunk_overlap=50"
 ```
 
-### 3. 批量摄取 (基于目录)
+### 2. 批量摄取 (基于目录)
 
 **端点**: `POST /api/v1/ingest/load`
 
@@ -91,7 +73,7 @@ import requests
 
 def upload_document(file_path: str):
     """上传并摄取文档"""
-    url = "http://localhost:8000/api/v1/ingest/upload"
+    url = "http://localhost:8000/api/v1/ingest"
     with open(file_path, "rb") as f:
         files = {"file": (f.name, f, "application/octet-stream")}
         data = {"chunk_size": 300, "chunk_overlap": 50}
@@ -273,21 +255,12 @@ class LocalRAGClient:
                 print(f"响应内容: {e.response.text}")
             return None
 
-    def ingest_document(self, document_path: str, chunk_size: int = 300, chunk_overlap: int = 50):
-        """通过路径摄取单个文档"""
-        payload = {
-            "document_path": document_path,
-            "chunk_size": chunk_size,
-            "chunk_overlap": chunk_overlap
-        }
-        return self._request("POST", "/api/v1/ingest", json=payload)
-
     def upload_document(self, file_path: str, chunk_size: int = 300, chunk_overlap: int = 50):
         """上传并摄取文档"""
         with open(file_path, "rb") as f:
             files = {"file": (Path(file_path).name, f, "application/octet-stream")}
             data = {"chunk_size": chunk_size, "chunk_overlap": chunk_overlap}
-            return self._request("POST", "/api/v1/ingest/upload", files=files, data=data)
+            return self._request("POST", "/api/v1/ingest", files=files, data=data)
 
     def ingest_load(self, path: str, chunk_size: int = 300, chunk_overlap: int = 50):
         """从目录批量摄取文档"""
@@ -369,7 +342,7 @@ class AsyncRAGClient:
         self.base_url = base_url
 
     async def upload_document(self, session, file_path):
-        url = f"{self.base_url}/api/v1/ingest/upload"
+        url = f"{self.base_url}/api/v1/ingest"
         data = aiohttp.FormData()
         data.add_field('file',
                        open(file_path, 'rb'),

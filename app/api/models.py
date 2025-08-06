@@ -36,47 +36,6 @@ class ChunkingOptions(BaseModel):
         return v
 
 
-class IngestRequest(ChunkingOptions):
-    """
-    文档摄取请求模型
-
-    用于 /api/v1/ingest 接口的请求参数验证
-    """
-
-    document_path: str = Field(
-        ...,
-        description="文档文件路径",
-        example="documents/example.txt",
-        min_length=1,
-        max_length=500
-    )
-
-    @field_validator('document_path')
-    @classmethod
-    def validate_document_path(cls, v):
-        """验证文档路径格式"""
-        if not v or not v.strip():
-            raise ValueError('document_path 不能为空')
-
-        v = v.strip()
-
-        # 检查文件扩展名
-        if not any(v.lower().endswith(ext) for ext in settings.SUPPORTED_FORMATS):
-            raise ValueError(f'不支持的文件格式，仅支持: {", ".join(settings.SUPPORTED_FORMATS)}')
-
-        return v
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "document_path": "documents/python_tutorial.txt",
-                "chunk_size": 500,
-                "chunk_overlap": 50
-            }
-        }
-    )
-
-
 class IngestLoadRequest(ChunkingOptions):
     """
     批量摄取请求模型
@@ -508,38 +467,6 @@ class HealthResponse(BaseModel):
                 },
                 "timestamp": "2024-01-01T12:00:00",
                 "error": None
-            }
-        }
-    )
-
-
-class DeleteDocumentRequest(BaseModel):
-    """
-    文档删除请求模型
-
-    用于删除文档接口的请求参数验证
-    """
-
-    document_path: str = Field(
-        ...,
-        description="要删除的文档文件路径",
-        example="documents/example.txt",
-        min_length=1,
-        max_length=500
-    )
-
-    @field_validator('document_path')
-    @classmethod
-    def validate_document_path(cls, v):
-        """验证文档路径格式"""
-        if not v or not v.strip():
-            raise ValueError('document_path 不能为空')
-        return v.strip()
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "document_path": "documents/python_tutorial.txt"
             }
         }
     )

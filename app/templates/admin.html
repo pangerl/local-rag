@@ -565,7 +565,7 @@
                 formData.append('chunk_overlap', chunkOverlap);
 
                 // 发送上传请求
-                const response = await fetch('/api/v1/ingest/upload', {
+                const response = await fetch('/api/v1/ingest', {
                     method: 'POST',
                     body: formData
                 });

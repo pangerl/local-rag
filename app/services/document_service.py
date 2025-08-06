@@ -278,7 +278,7 @@ class DocumentService:
 
         return results
 
-    def get_processing_stats(self) -> Dict[str, Any]:
+
         """
         获取处理统计信息
 
