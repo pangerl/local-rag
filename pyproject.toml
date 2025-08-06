@@ -7,8 +7,6 @@ requires-python = ">=3.13"
 dependencies = [
     "chromadb>=0.4.0",
     "fastapi>=0.100.0",
-    "httpx>=0.25.0",
-    "markdown>=3.4.0",
     "numpy>=1.24.0",
     "psutil>=7.0.0",
     "pydantic>=2.0.0",
@@ -19,7 +17,6 @@ dependencies = [
     "sentence-transformers>=2.2.0",
     "uvicorn[standard]>=0.23.0",
     "langchain-core>=0.3.72",
-    "langchain-unstructured>=0.1.5",
     "langchain-text-splitters>=0.3.9",
     "unstructured[docx,pdf]>=0.18.11",
     "langchain-chroma>=0.2.5",
