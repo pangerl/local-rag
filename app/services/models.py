@@ -63,37 +63,29 @@ class RerankerModel:
         self.token_false_id = self.tokenizer.convert_tokens_to_ids("no")
         self.token_true_id = self.tokenizer.convert_tokens_to_ids("yes")
 
-        prefix = "<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be \"yes\" or \"no\".<|im_end|>\n<|im_start|>user\n"
-        suffix = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
-        self.prefix_tokens = self.tokenizer.encode(prefix, add_special_tokens=False)
-        self.suffix_tokens = self.tokenizer.encode(suffix, add_special_tokens=False)
+        self.prefix = "<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be \"yes\" or \"no\".<|im_end|>\n<|im_start|>user\n"
+        self.suffix = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
         logger.info(f"RerankerModel initialized on device: {self.device}")
-
-    @staticmethod
-    def _format_instruction(instruction: str, query: str, doc: str) -> str:
-        if not instruction:
-            instruction = 'Given a web search query, retrieve relevant passages that answer the query'
-        return f"<Instruct>: {instruction}\n<Query>: {query}\n<Document>: {doc}"
-
-    def _process_inputs(self, pairs: List[str]):
-        inputs = self.tokenizer(
-            pairs, padding=False, truncation='longest_first',
-            return_attention_mask=False, max_length=self.max_length - len(self.prefix_tokens) - len(self.suffix_tokens)
-        )
-        for i in range(len(inputs['input_ids'])):
-            inputs['input_ids'][i] = self.prefix_tokens + inputs['input_ids'][i] + self.suffix_tokens
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            inputs = self.tokenizer.pad(inputs, padding=True, return_tensors="pt", max_length=self.max_length)
-        for key in inputs:
-            inputs[key] = inputs[key].to(self.model.device)
-        return inputs
 
     @torch.no_grad()
     def rerank(self, query: str, documents: List[str], instruction: str = None) -> List[float]:
-        pairs = [self._format_instruction(instruction, query, doc) for doc in documents]
-        inputs = self._process_inputs(pairs)
+        if not instruction:
+            instruction = 'Given a web search query, retrieve relevant passages that answer the query'
+
+        # 格式化查询-文档对
+        formatted_pairs = [f"<Instruct>: {instruction}\n<Query>: {query}\n<Document>: {doc}" for doc in documents]
+
+        # 添加系统指令前缀和后缀
+        full_texts = [self.prefix + pair + self.suffix for pair in formatted_pairs]
+
+        # 使用 __call__ 方法进行高效处理
+        inputs = self.tokenizer(
+            full_texts,
+            padding=True,
+            truncation=True,
+            max_length=self.max_length,
+            return_tensors="pt"
+        ).to(self.device)
 
         batch_scores = self.model(**inputs).logits[:, -1, :]
         true_vector = batch_scores[:, self.token_true_id]
